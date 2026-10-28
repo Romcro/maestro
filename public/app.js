@@ -759,7 +759,7 @@ function renderAssistant() {
 // Web Speech API du navigateur : reconnaissance (Chrome, Safari) et synthèse vocale, sans clé ni serveur.
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
 const TTS = 'speechSynthesis' in window ? window.speechSynthesis : null;
-const VOICE_DEFAULTS = { replies: true, all: false, loop: false, announce: false, voice: '', rate: 1.05 };
+const VOICE_DEFAULTS = { replies: true, all: false, loop: false, announce: false, waitEnd: true, voice: '', rate: 1 };
 const V = {
   state: 'idle', // idle | listening | speaking (thinking se déduit de l'assistant)
   heard: '',
@@ -777,6 +777,7 @@ const voiceForm = (f) => ({
   all: !!f.get('v-all'),
   loop: !!f.get('v-loop'),
   announce: !!f.get('v-announce'),
+  waitEnd: !!f.get('v-waitend'),
   voice: String(f.get('v-voice') || ''),
   rate: Number(f.get('v-rate')) || VOICE_DEFAULTS.rate,
 });
@@ -791,51 +792,97 @@ function coreState() {
   return S.assistant.busy ? 'thinking' : 'idle';
 }
 
+// Phrases qui terminent la dictée : en mode patient, Maestro attend qu'on les dise (ou un clic) avant d'envoyer.
+const END_WORDS = /[\s,.!]*\b(?:j['’] ?ai fini|c['’]est tout|à toi|envoie)[\s.!]*$/i;
+const SILENCE_LIMIT = 120_000;
+
 function listen() {
-  if (V.rec) return V.rec.stop(); // deuxième clic : envoie ce qui a été entendu
+  if (V.rec) return finishListening(); // deuxième clic : envoie ce qui a été entendu
   if (!SR) return toast({ title: 'Micro indisponible ici', body: 'Ouvre Maestro dans Chrome ou Safari pour lui parler.', kind: 'error' });
   V.loopNext = false;
   TTS?.cancel();
+  V.said = '';
+  V.lastSpeech = Date.now();
+  setVoice('listening');
+  startRecognition();
+}
+
+function startRecognition() {
+  const patient = V.prefs.waitEnd;
   const rec = new SR();
   rec.lang = 'fr-FR';
   rec.interimResults = true;
-  rec.continuous = false;
+  rec.continuous = patient;
   let final = '';
   rec.onresult = (e) => {
+    final = '';
     let interim = '';
-    for (let i = e.resultIndex; i < e.results.length; i++) {
+    for (let i = 0; i < e.results.length; i++) {
       if (e.results[i].isFinal) final += e.results[i][0].transcript;
       else interim += e.results[i][0].transcript;
     }
-    setVoice('listening', `${final} ${interim}`.trim());
+    V.lastSpeech = Date.now();
+    const done = `${V.said} ${final}`.trim();
+    if (patient && END_WORDS.test(done)) {
+      V.heard = done.replace(END_WORDS, '').trim();
+      return finishListening();
+    }
+    setVoice('listening', `${done} ${interim}`.trim());
   };
   rec.onerror = (e) => {
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      V.fatal = true;
       toast({ title: 'Micro refusé', body: "Autorise le micro pour Maestro : clique sur l'icône à gauche de l'adresse, ou Réglages Système › Confidentialité et sécurité › Micro.", kind: 'error' });
     } else if (e.error === 'network') {
+      V.fatal = true;
       toast({ title: 'Transcription impossible', body: 'La reconnaissance vocale du navigateur a besoin d\'internet.', kind: 'error' });
     } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
       toast({ title: 'Micro', body: e.error, kind: 'error' });
     }
   };
   rec.onend = () => {
-    const text = V.heard.trim();
-    V.rec = null;
-    setVoice('idle');
-    if (V.cancelled) { V.cancelled = false; return; }
-    if (text) {
-      V.awaiting = true;
-      sendAssistant(text, { voice: true });
+    if (V.rec !== rec) return; // session déjà terminée (envoi, Échap)
+    V.said = `${V.said} ${final}`.trim();
+    const fatal = V.fatal;
+    V.fatal = false;
+    // Le navigateur coupe l'écoute après un blanc : en mode patient, on la relance sans rien envoyer.
+    if (patient && !fatal) {
+      if (Date.now() - V.lastSpeech < SILENCE_LIMIT) {
+        try { return startRecognition(); } catch {}
+      }
+      V.rec = null;
+      setVoice('idle');
+      if (V.said) {
+        drafts.assistant = V.said;
+        toast({ title: 'Micro coupé après 2 minutes de silence', body: 'Ce que tu as dit est dans la zone de saisie : complète-le ou envoie-le.' });
+      }
+      return;
     }
+    V.heard = V.said;
+    finishListening();
   };
   V.rec = rec;
-  setVoice('listening');
   try { rec.start(); } catch { V.rec = null; setVoice('idle'); }
+}
+
+/** Termine l'écoute et envoie la demande dictée. */
+function finishListening() {
+  const rec = V.rec;
+  const text = V.heard.trim();
+  V.rec = null;
+  try { rec?.abort(); } catch {}
+  setVoice('idle');
+  if (text) {
+    V.awaiting = true;
+    sendAssistant(text, { voice: true });
+  }
 }
 
 function stopVoice() {
   V.loopNext = false;
-  if (V.rec) { V.cancelled = true; V.rec.abort(); }
+  const rec = V.rec;
+  V.rec = null;
+  try { rec?.abort(); } catch {}
   TTS?.cancel();
   setVoice('idle');
 }
@@ -855,14 +902,22 @@ function speechText(src) {
   if (t.length > 1400) t = `${t.slice(0, 1400).replace(/[^.!?]*$/, '')} La suite est affichée à l'écran.`;
   return t;
 }
-const frVoices = () => (TTS?.getVoices() || []).filter((v) => /^fr/i.test(v.lang));
+// Voix « gadget » de macOS (Eddy, Grandpa, Zarvox…) : très robotiques, jamais choisies d'office.
+const NOVELTY = /^(Albert|Bad News|Bahh|Bells|Boing|Bubbles|Cellos|Eddy|Flo|Fred|Good News|Grandma|Grandpa|Jester|Junior|Kathy|Organ|Ralph|Reed|Rocko|Sandy|Shelley|Superstar|Trinoids|Whisper|Wobble|Zarvox)\b/i;
+function voiceScore(v) {
+  let s = 0;
+  if (/premium/i.test(v.name)) s += 60;
+  else if (/amélior|enhanced|siri/i.test(v.name)) s += 45;
+  else if (/google/i.test(v.name)) s += 35; // voix en ligne de Chrome, assez naturelle
+  if (/fr[-_]FR/i.test(v.lang)) s += 5;
+  if (NOVELTY.test(v.name)) s -= 100;
+  return s;
+}
+const frVoices = () => (TTS?.getVoices() || []).filter((v) => /^fr/i.test(v.lang)).sort((a, b) => voiceScore(b) - voiceScore(a));
+const naturalVoice = (v) => voiceScore(v) >= 35;
 function pickVoice(name) {
   const all = frVoices();
-  return all.find((v) => v.name === name)
-    || all.find((v) => /thomas/i.test(v.name) && /amélior|enhanced|premium/i.test(v.name))
-    || all.find((v) => /thomas/i.test(v.name))
-    || all.find((v) => /fr[-_]FR/i.test(v.lang))
-    || all[0] || null;
+  return all.find((v) => v.name === name) || all[0] || null;
 }
 
 function speak(text, prefs = V.prefs) {
@@ -884,7 +939,7 @@ function speak(text, prefs = V.prefs) {
     u.lang = voice?.lang || 'fr-FR';
     if (voice) u.voice = voice;
     u.rate = prefs.rate || 1;
-    u.pitch = 0.95;
+    u.pitch = 1;
     if (i === 0) u.onstart = () => setVoice('speaking');
     if (i === chunks.length - 1) {
       u.onend = () => {
@@ -899,10 +954,11 @@ function speak(text, prefs = V.prefs) {
 
 function renderCore() {
   const st = coreState();
-  const label = { off: 'Voix indisponible', idle: 'En veille', listening: "J'écoute…", thinking: 'Analyse en cours…', speaking: 'Réponse vocale' }[st];
+  const label = { off: 'Voix indisponible', idle: 'En veille', listening: V.prefs.waitEnd ? "J'écoute · dis « j'ai fini » pour envoyer" : "J'écoute…", thinking: 'Analyse en cours…', speaking: 'Réponse vocale' }[st];
   const heard = V.heard
     ? `<div class="core-heard">${esc(V.heard)}</div>`
     : st === 'idle' ? `<div class="core-heard hint">Clique sur le réacteur ou appuie sur <kbd>⌥ M</kbd> pour parler.${V.prefs.replies ? ' Je te répondrai à voix haute.' : ''}</div>`
+    : st === 'listening' && V.prefs.waitEnd ? '<div class="core-heard hint">Prends ton temps. Dis « j\'ai fini » ou clique sur le réacteur pour envoyer.</div>'
     : st === 'off' ? '<div class="core-heard hint">Ouvre Maestro dans Chrome ou Safari pour lui parler.</div>'
     : st === 'speaking' ? '<div class="core-heard hint">Clique sur le réacteur pour m\'interrompre.</div>'
     : '<div class="core-heard"></div>';
@@ -973,13 +1029,14 @@ function openSettings(section) {
 
         <h3 style="margin:22px 0 0" id="voice">Voix</h3>
         ${SR ? '' : '<p class="muted">La reconnaissance vocale n\'est pas disponible dans ce navigateur : ouvre Maestro dans Chrome ou Safari pour parler au micro.</p>'}
+        <div class="field"><label for="v-waitend">Attendre que j'aie fini</label><input id="v-waitend" class="switch" type="checkbox" name="v-waitend" ${vp.waitEnd ? 'checked' : ''}><div class="help">Maestro ne coupe pas pendant tes pauses : termine par « j'ai fini », « c'est tout » ou « à toi », ou clique sur le réacteur. Désactivé, il envoie dès que tu te tais.</div></div>
         <div class="field"><label for="v-replies">Répondre à voix haute</label><input id="v-replies" class="switch" type="checkbox" name="v-replies" ${vp.replies ? 'checked' : ''}><div class="help">Quand tu parles au micro, la réponse est lue à voix haute.</div></div>
         <div class="field"><label for="v-all">Lire toutes les réponses</label><input id="v-all" class="switch" type="checkbox" name="v-all" ${vp.all ? 'checked' : ''}><div class="help">Même celles écrites au clavier et celles des routines.</div></div>
         <div class="field"><label for="v-loop">Conversation continue</label><input id="v-loop" class="switch" type="checkbox" name="v-loop" ${vp.loop ? 'checked' : ''}><div class="help">Le micro se rouvre après chaque réponse parlée. Clique sur le réacteur ou appuie sur Échap pour arrêter.</div></div>
         <div class="field"><label for="v-announce">Annonces vocales</label><input id="v-announce" class="switch" type="checkbox" name="v-announce" ${vp.announce ? 'checked' : ''}><div class="help">Annonce à voix haute quand une étape attend ta réponse, ta validation, ou échoue.</div></div>
         <div class="field"><label for="v-voice">Voix</label>
-          <select id="v-voice" name="v-voice"><option value="">Automatique</option>${frVoices().map((v) => `<option value="${esc(v.name)}" ${v.name === vp.voice ? 'selected' : ''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select>
-          <div class="help">Pour une voix plus naturelle sur Mac : Réglages Système › Accessibilité › Contenu énoncé › Voix du système › Gérer les voix, puis télécharge « Thomas (amélioré) ».</div></div>
+          <select id="v-voice" name="v-voice"><option value="">Automatique : la plus naturelle</option>${frVoices().filter((v) => !NOVELTY.test(v.name)).map((v) => `<option value="${esc(v.name)}" ${v.name === vp.voice ? 'selected' : ''}>${naturalVoice(v) ? '★ ' : ''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select>
+          <div class="help">${frVoices().some(naturalVoice) ? 'Les voix ★ sont les plus naturelles.' : 'Aucune voix naturelle installée : elles sonnent robotiques.'} Pour en ajouter une sur Mac : Réglages Système › Accessibilité › Contenu énoncé › Voix du système › Gérer les voix… › Français, télécharge une voix « Premium » ou « Améliorée » (ex. Audrey Premium), puis recharge Maestro.</div></div>
         <div class="field"><label for="v-rate">Vitesse</label><input id="v-rate" type="range" name="v-rate" min="0.8" max="1.4" step="0.05" value="${vp.rate}"><div class="help"></div></div>
         <div class="field"><span></span><button class="btn sm" type="button" data-action="voice-test">${icon('mic')}Tester la voix</button></div>
 
