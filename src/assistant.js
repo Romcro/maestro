@@ -13,6 +13,9 @@ import { paths, readJSON, writeJSON, ensureDir } from './paths.js';
 const HISTORY = path.join(paths.assistantDir, 'history.json');
 const MEMORY = path.join(paths.assistantDir, 'MEMOIRE.md');
 const MAX_MESSAGES = 300;
+// Préfixe ajouté aux messages dictés au micro : la réponse sera lue à voix haute dans le navigateur.
+export const VOICE_HINT =
+  "[Message dicté au micro. Ta réponse sera lue à voix haute : réponds en une à quatre phrases parlées, naturelles, sans Markdown, liste, tableau, lien ni bloc de code. Si un détail technique est nécessaire, dis qu'il est affiché à l'écran.]";
 
 class Assistant {
   constructor() {
@@ -70,16 +73,16 @@ class Assistant {
     this.abort?.abort();
   }
 
-  send(text, { routine = null } = {}) {
-    this.push({ role: 'user', text, routine });
-    this.queue.push({ text, routine });
+  send(text, { routine = null, voice = false } = {}) {
+    this.push({ role: 'user', text, routine, ...(voice ? { voice: true } : {}) });
+    this.queue.push({ text, routine, voice });
     this.status();
     if (!this.busy) this.drain();
   }
 
   async drain() {
     while (this.queue.length) {
-      const { text, routine } = this.queue.shift();
+      const { text, routine, voice } = this.queue.shift();
       this.busy = true;
       this.live = { text: '', tools: [] };
       this.abort = new AbortController();
@@ -90,7 +93,7 @@ class Assistant {
       try {
         const r = await runAgent({
           cwd: paths.assistantDir,
-          prompt: routine ? `[Routine programmée « ${routine} »]\n${text}` : text,
+          prompt: routine ? `[Routine programmée « ${routine} »]\n${text}` : voice ? `${VOICE_HINT}\n${text}` : text,
           resume: this.data.sessionId || undefined,
           model: cfg.assistant?.model || cfg.model || undefined,
           permissionMode: 'acceptEdits',
@@ -123,7 +126,7 @@ class Assistant {
         if (r.sessionId) this.data.sessionId = r.sessionId;
         this.data.cost = (this.data.cost || 0) + (r.cost || 0);
         const finalText = r.ok ? r.text || reply : r.aborted ? `${reply}\n\n_(arrêté)_`.trim() : `⚠️ ${r.text}`;
-        this.push({ role: 'assistant', text: finalText, tools, routine, cost: r.cost });
+        this.push({ role: 'assistant', text: finalText, tools, routine, cost: r.cost, ...(voice ? { voice: true } : {}) });
         if (routine) notify({ title: `Routine « ${routine} »`, body: finalText.replace(/[#*_`>]/g, '').slice(0, 180), kind: 'info' });
         else notify({ title: 'Assistant', body: finalText.replace(/[#*_`>]/g, '').slice(0, 180), kind: 'assistant' });
       } catch (e) {

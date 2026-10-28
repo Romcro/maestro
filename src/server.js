@@ -172,7 +172,7 @@ route('POST', '/api/inbox/:id', ({ params, body }) => {
 
 route('POST', '/api/assistant', ({ body }) => {
   if (!body.text?.trim()) throw Object.assign(new Error('Message vide'), { status: 400 });
-  assistant.send(body.text.trim());
+  assistant.send(body.text.trim(), { voice: body.voice === true });
   return { ok: true };
 });
 route('POST', '/api/assistant/stop', () => (assistant.stop(), { ok: true }));
