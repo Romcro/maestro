@@ -725,7 +725,7 @@ async function loadLog(pid, sid) {
 function renderAssistant() {
   const a = S.assistant;
   const msgs = a.messages || [];
-  const suggestions = ['Où en sont mes projets ?', "Qu'est-ce qui m'attend aujourd'hui ?", 'Lis-moi mes newsletters du jour', 'Quelles sont mes routines Claude ?', 'Quels skills j\'ai ?', 'Programme un brief chaque matin à 8 h 30'];
+  const suggestions = ['Où en sont mes projets ?', "Qu'est-ce qui m'attend aujourd'hui ?", 'Lis-moi ma dernière newsletter', 'Quelles sont mes routines Claude ?', 'Quels skills j\'ai ?', 'Programme un brief chaque matin à 8 h 30'];
   return `<div class="chat">
     <div class="chat-head">
       <div><h1>Assistant</h1><p>Il connaît l'état de tes projets et ton compte Claude : skills, routines, connecteurs (Gmail, agenda…).</p></div>
@@ -1063,7 +1063,7 @@ async function fillClaudeAccount(el) {
     <p style="margin:0 0 6px">${a.skills.length} skill${a.skills.length > 1 ? 's' : ''} dans <code>${esc(a.dir)}</code>${a.scheduled.length ? ` et ${a.scheduled.length} tâche${a.scheduled.length > 1 ? 's' : ''} planifiée${a.scheduled.length > 1 ? 's' : ''} de l'app Claude` : ''}.</p>
     ${a.skills.length ? `<details><summary>Voir les skills</summary><ul style="margin:6px 0;padding-left:18px">${list(a.skills)}</ul></details>` : ''}
     ${a.scheduled.length ? `<details><summary>Voir les tâches planifiées</summary><ul style="margin:6px 0;padding-left:18px">${list(a.scheduled)}</ul></details>` : ''}
-    <p style="margin:6px 0 0">Tes routines claude.ai et tes connecteurs (Gmail pour les newsletters, agenda…) passent par Claude Code : il doit être connecté à ton compte (<code>claude</code> puis <code>/login</code>), et Gmail connecté sur claude.ai › Paramètres › Connecteurs.</p>`;
+    <p style="margin:6px 0 0">Tes routines claude.ai (et les newsletters qu'elles rédigent) passent par Claude Code : il doit être connecté à ton compte (<code>claude</code> puis <code>/login</code>). Pour tes mails et ton agenda, connecte aussi Gmail et Google Agenda sur claude.ai › Paramètres › Connecteurs.</p>`;
 }
 
 async function saveSettings(form) {
