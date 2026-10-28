@@ -18,6 +18,7 @@ src/git.js         Worktrees, commits, fusion --no-ff, détection de conflits
 src/inbox.js       Boîte « À traiter » : autorisations, questions, validations, conflits, erreurs
 src/bus.js         Diffusion SSE et notifications (bandeau, navigateur, macOS natif)
 src/assistant.js   Conversation assistant, mémoire (MEMOIRE.md), routines à heure fixe
+src/claude-account.js  Compte Claude en lecture (~/.claude) : skills, plugins, tâches planifiées ; lecture MCP sans autorisation
 src/config.js      Réglages (~/.maestro/config.json), commandes autorisées par défaut
 public/            Tableau de bord sans étape de build : index.html, app.js, styles.css, sw.js
 test/run-tests.js  Tests de bout en bout en mode simulé (npm test)

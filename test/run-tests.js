@@ -192,6 +192,56 @@ await test('mode vocal : consigne de réponse parlée et messages marqués', asy
   assert.match(assistant.data.messages.at(-1).text, /\*\*/);
 });
 
+console.log('Compte Claude');
+const claudeHome = path.join(tmp, 'claude');
+process.env.CLAUDE_CONFIG_DIR = claudeHome;
+const skill = (dir, name, desc) => {
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, 'SKILL.md'), `---\nname: ${name}\ndescription: >\n  ${desc}\n  sur deux lignes\n---\n# ${name}\nCorps du skill.`);
+};
+skill(path.join(claudeHome, 'skills', 'veille'), 'veille', 'Fait ma veille');
+skill(path.join(claudeHome, 'plugins', 'cache', 'mkt', 'outils', '1.0', 'skills', 'pdf'), 'pdf', 'Lit des PDF');
+fs.writeFileSync(path.join(claudeHome, 'plugins', 'installed_plugins.json'), JSON.stringify({ version: 2, plugins: { 'outils@mkt': [{ installPath: path.join(claudeHome, 'plugins', 'cache', 'mkt', 'outils', '1.0') }] } }));
+skill(path.join(claudeHome, 'scheduled-tasks', 'brief'), 'brief', 'Brief du matin');
+await test('liste les skills perso, des plugins et les tâches planifiées', async () => {
+  const { listSkills, listScheduledTasks, readSkillContent } = await import('../src/claude-account.js');
+  const skills = listSkills();
+  assert.deepEqual(skills.map((s) => s.name), ['outils:pdf', 'veille']);
+  assert.equal(skills.find((s) => s.name === 'veille').description, 'Fait ma veille sur deux lignes');
+  assert.deepEqual(listScheduledTasks().map((t) => t.name), ['brief']);
+  assert.match(readSkillContent('pdf').content, /Corps du skill/);
+  assert.equal(readSkillContent('inconnu'), null);
+});
+await test("lecture sans autorisation, écriture via la boîte « À traiter »", async () => {
+  const { isReadOnlyCall } = await import('../src/claude-account.js');
+  const { permissionHandler } = await import('../src/agent.js');
+  assert.ok(isReadOnlyCall('mcp__claude_ai_Gmail__search_threads'));
+  assert.ok(isReadOnlyCall('mcp__claude_ai_Gmail__list_labels'));
+  assert.ok(isReadOnlyCall('RemoteTrigger', { action: 'list' }));
+  assert.ok(!isReadOnlyCall('RemoteTrigger', { action: 'run' }));
+  assert.ok(!isReadOnlyCall('mcp__claude_ai_Gmail__send_message'));
+  assert.ok(!isReadOnlyCall('mcp__claude_ai_Gmail__create_draft'));
+  assert.ok(!isReadOnlyCall('mcp__notion__get_or_create_page'));
+  assert.ok(!isReadOnlyCall('Bash', { command: 'ls' }));
+  const events = [];
+  const ctx = { projectId: null, stepId: '__assistant', label: 'Assistant', autoAllow: isReadOnlyCall, onEvent: (e) => events.push(e) };
+  const r = await permissionHandler(ctx)('mcp__claude_ai_Gmail__get_thread', { id: 'x' }, { signal: new AbortController().signal });
+  assert.equal(r.behavior, 'allow');
+  assert.equal(events[0].decision, 'auto');
+  const pending = permissionHandler(ctx)('mcp__claude_ai_Gmail__send_message', {}, { signal: new AbortController().signal });
+  await wait(() => inbox.list().some((i) => i.tool === 'mcp__claude_ai_Gmail__send_message'));
+  const item = inbox.list().find((i) => i.tool === 'mcp__claude_ai_Gmail__send_message');
+  inbox.resolve(item.id, { choice: 'deny' });
+  assert.equal((await pending).behavior, 'deny');
+});
+await test("l'assistant répond sur tes skills", async () => {
+  const { assistant } = await import('../src/assistant.js');
+  const before = assistant.data.messages.length;
+  assistant.send('Quels skills j\'ai ?', { voice: true });
+  await wait(() => assistant.data.messages.length >= before + 2 && !assistant.busy);
+  assert.match(assistant.data.messages.at(-1).text, /2 skills : outils:pdf, veille/);
+});
+
 console.log(`\n${passed} test(s) réussi(s)${process.exitCode ? ', des échecs' : ''}.`);
 for (const pr of manager.projects.values()) pr.dispose();
 fs.rmSync(tmp, { recursive: true, force: true });
