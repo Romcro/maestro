@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { manager } from './manager.js';
 import { inbox } from './inbox.js';
 import { assistant } from './assistant.js';
+import { claudeDir, listSkills, listScheduledTasks } from './claude-account.js';
 import { bus, broadcast, setPresence, notify } from './bus.js';
 import { getConfig, updateConfig, findClaude } from './config.js';
 import { HOST, PORT, PUBLIC_DIR, paths, ensureDir, ROOT } from './paths.js';
@@ -177,6 +178,7 @@ route('POST', '/api/assistant', ({ body }) => {
 });
 route('POST', '/api/assistant/stop', () => (assistant.stop(), { ok: true }));
 route('POST', '/api/assistant/reset', () => (assistant.reset(), { ok: true }));
+route('GET', '/api/claude-account', () => ({ dir: claudeDir(), skills: listSkills(), scheduled: listScheduledTasks() }));
 route('POST', '/api/routines/:id/run', ({ params }) => (assistant.runRoutineNow(params.id), { ok: true }));
 
 route('GET', '/api/config', () => getConfig());

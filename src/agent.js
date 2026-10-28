@@ -39,12 +39,14 @@ export function describeTool(name, input = {}, cwd = '') {
     case 'Task':
     case 'Agent': return { icon: 'agent', label: `Sous-agent : ${trunc(input.description || input.prompt, 90)}` };
     case 'TodoWrite': return { icon: 'list', label: 'Met à jour sa liste de tâches' };
+    case 'Skill': return { icon: 'tool', label: `Skill ${input.skill || input.command || ''}`.trim() };
+    case 'RemoteTrigger': return { icon: 'clock', label: input.action === 'list' ? 'Liste tes routines claude.ai' : `Routines claude.ai · ${input.action}` };
     case 'mcp__maestro__ask_user': return { icon: 'question', label: `Te pose une question` };
     case 'mcp__maestro__report_progress': return { icon: 'check', label: trunc(input.summary || 'Avancement', 120) };
     default:
       if (name.startsWith('mcp__')) {
         const [, server, tool] = name.split('__');
-        return { icon: 'plug', label: `${server} · ${tool}` };
+        return { icon: 'plug', label: `${server.replace(/^claude_ai_/, '').replace(/_/g, ' ')} · ${tool}` };
       }
       return { icon: 'tool', label: name };
   }
@@ -56,6 +58,10 @@ export function describeTool(name, input = {}, cwd = '') {
 export function permissionHandler(ctx) {
   return async (toolName, input, { signal, suggestions, blockedPath, decisionReason }) => {
     const d = describeTool(toolName, input, ctx.cwd);
+    if (ctx.autoAllow?.(toolName, input)) {
+      ctx.onEvent?.({ type: 'permission', tool: toolName, label: d.label, decision: 'auto' });
+      return { behavior: 'allow', updatedInput: input };
+    }
     const isFile = ['Write', 'Edit', 'MultiEdit', 'NotebookEdit'].includes(toolName);
     const verb =
       toolName === 'Bash' ? 'veut lancer une commande'
@@ -287,6 +293,14 @@ async function fakeRun(o, tools, emit) {
   try {
     emit({ type: 'init', sessionId, model: 'simulé' });
     await wait(400);
+    if (o.ctx.stepId === '__assistant' && /skill/i.test(o.prompt)) {
+      emit({ type: 'tool', icon: 'plug', name: 'mcp__maestro__claude_account', label: 'maestro · claude_account' });
+      const list = await toolByName.claude_account.handler({ action: 'skills' });
+      const names = list.startsWith('[') ? JSON.parse(list).map((s) => s.nom) : [];
+      const text = `Simulation : tu as ${names.length} skill${names.length > 1 ? 's' : ''}${names.length ? ` : ${names.join(', ')}` : ''}.`;
+      emit({ type: 'text', text });
+      return { sessionId, ok: true, text, cost: 0.002, turns: 2 };
+    }
     if (o.ctx.stepId === '__assistant') {
       emit({ type: 'tool', icon: 'plug', name: 'mcp__maestro__projects_status', label: 'maestro · projects_status' });
       const status = JSON.parse(await toolByName.projects_status.handler({}));

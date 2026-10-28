@@ -29,7 +29,7 @@ export const DEFAULT_CONFIG = {
   notifications: { native: 'auto', sound: true },
   openAs: 'app',
   claudePath: '',
-  assistant: { model: '', mcpServers: {} },
+  assistant: { model: '', mcpServers: {}, autoAllowReads: true },
   routines: [],
 };
 

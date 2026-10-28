@@ -725,10 +725,10 @@ async function loadLog(pid, sid) {
 function renderAssistant() {
   const a = S.assistant;
   const msgs = a.messages || [];
-  const suggestions = ['Où en sont mes projets ?', "Qu'est-ce qui m'attend aujourd'hui ?", 'Programme un brief chaque matin à 8 h 30', 'Mets en pause tous les projets'];
+  const suggestions = ['Où en sont mes projets ?', "Qu'est-ce qui m'attend aujourd'hui ?", 'Lis-moi mes newsletters du jour', 'Quelles sont mes routines Claude ?', 'Quels skills j\'ai ?', 'Programme un brief chaque matin à 8 h 30'];
   return `<div class="chat">
     <div class="chat-head">
-      <div><h1>Assistant</h1><p>Il connaît l'état de tes projets et utilise tes outils connectés (agenda, Notion…) configurés dans les réglages.</p></div>
+      <div><h1>Assistant</h1><p>Il connaît l'état de tes projets et ton compte Claude : skills, routines, connecteurs (Gmail, agenda…).</p></div>
       <div class="btn-row">
         <button class="btn back icon" data-action="nav" aria-label="Menu">${icon('menu')}</button>
         <button class="btn ghost sm" data-action="settings" data-section="routines">${icon('clock')}Routines${a.routines?.length ? ` (${a.routines.length})` : ''}</button>
@@ -1025,6 +1025,8 @@ function openSettings(section) {
         <div class="field stack"><label for="f-mcp">Serveurs MCP de l'assistant</label>
           <textarea id="f-mcp" name="mcp" rows="5" style="font-family:var(--mono);font-size:12.5px" placeholder='{ "notion": { "type": "http", "url": "https://mcp.notion.com/mcp" } }'>${esc(JSON.stringify(c.assistant?.mcpServers || {}, null, 2))}</textarea>
           <div class="help">Les serveurs que tu as déjà ajoutés à Claude Code avec <code>claude mcp add --scope user</code> sont aussi disponibles.</div></div>
+        <div class="field"><label for="f-reads">Lire sans me demander</label><input id="f-reads" class="switch" type="checkbox" name="autoAllowReads" ${c.assistant?.autoAllowReads !== false ? 'checked' : ''}><div class="help">L'assistant lit tes mails, routines et notes sans te demander à chaque fois. Envoyer, créer, modifier ou supprimer passe toujours par ta boîte « À traiter ».</div></div>
+        <div class="field stack" id="claude-account"><label>Ton compte Claude</label><div class="help" data-claude-account>Chargement…</div></div>
         <div class="field"><label for="f-amodel">Modèle de l'assistant</label><input id="f-amodel" type="text" name="amodel" value="${esc(c.assistant?.model || '')}" placeholder="par défaut" style="width:180px"><div class="help"></div></div>
 
         <h3 style="margin:22px 0 0" id="voice">Voix</h3>
@@ -1048,6 +1050,20 @@ function openSettings(section) {
     </form>`;
   dlg.showModal();
   if (section) dlg.querySelector(`#${section}`)?.scrollIntoView({ block: 'start' });
+  fillClaudeAccount(dlg.querySelector('[data-claude-account]'));
+}
+
+// Ce que Claude Code voit de ton compte sur ce Mac (lecture seule, rien ne sort de ton ordinateur).
+async function fillClaudeAccount(el) {
+  if (!el) return;
+  const a = await api('GET', '/api/claude-account').catch(() => null);
+  if (!a) { el.textContent = 'Impossible de lire ton dossier Claude.'; return; }
+  const list = (items) => items.map((s) => `<li><b>${esc(s.name)}</b>${s.description ? ` · ${esc(s.description.slice(0, 110))}` : ''}</li>`).join('');
+  el.innerHTML = `
+    <p style="margin:0 0 6px">${a.skills.length} skill${a.skills.length > 1 ? 's' : ''} dans <code>${esc(a.dir)}</code>${a.scheduled.length ? ` et ${a.scheduled.length} tâche${a.scheduled.length > 1 ? 's' : ''} planifiée${a.scheduled.length > 1 ? 's' : ''} de l'app Claude` : ''}.</p>
+    ${a.skills.length ? `<details><summary>Voir les skills</summary><ul style="margin:6px 0;padding-left:18px">${list(a.skills)}</ul></details>` : ''}
+    ${a.scheduled.length ? `<details><summary>Voir les tâches planifiées</summary><ul style="margin:6px 0;padding-left:18px">${list(a.scheduled)}</ul></details>` : ''}
+    <p style="margin:6px 0 0">Tes routines claude.ai et tes connecteurs (Gmail pour les newsletters, agenda…) passent par Claude Code : il doit être connecté à ton compte (<code>claude</code> puis <code>/login</code>), et Gmail connecté sur claude.ai › Paramètres › Connecteurs.</p>`;
 }
 
 async function saveSettings(form) {
@@ -1071,7 +1087,7 @@ async function saveSettings(form) {
     allow: String(f.get('allow') || '').split('\n').map((s) => s.trim()).filter(Boolean),
     model: String(f.get('model') || '').trim(),
     notifications: { native: f.get('native'), sound: !!f.get('sound') },
-    assistant: { model: String(f.get('amodel') || '').trim(), mcpServers: mcp },
+    assistant: { model: String(f.get('amodel') || '').trim(), mcpServers: mcp, autoAllowReads: !!f.get('autoAllowReads') },
     openAs: f.get('openAs'),
   }, 'Réglages enregistrés');
   if (r) S.config = r;

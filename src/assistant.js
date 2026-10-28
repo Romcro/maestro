@@ -8,6 +8,7 @@ import { runAgent } from './agent.js';
 import { broadcast, notify } from './bus.js';
 import { getConfig, updateConfig } from './config.js';
 import { manager } from './manager.js';
+import { listSkills, listScheduledTasks, readSkillContent, isReadOnlyCall } from './claude-account.js';
 import { paths, readJSON, writeJSON, ensureDir } from './paths.js';
 
 const HISTORY = path.join(paths.assistantDir, 'history.json');
@@ -15,7 +16,7 @@ const MEMORY = path.join(paths.assistantDir, 'MEMOIRE.md');
 const MAX_MESSAGES = 300;
 // Préfixe ajouté aux messages dictés au micro : la réponse sera lue à voix haute dans le navigateur.
 export const VOICE_HINT =
-  "[Message dicté au micro. Ta réponse sera lue à voix haute : réponds en une à quatre phrases parlées, naturelles, sans Markdown, liste, tableau, lien ni bloc de code. Si un détail technique est nécessaire, dis qu'il est affiché à l'écran.]";
+  "[Message dicté au micro. Ta réponse sera lue à voix haute : réponds en une à quatre phrases parlées, naturelles, sans Markdown, liste, tableau, lien ni bloc de code. Si un détail technique est nécessaire, dis qu'il est affiché à l'écran. Exception : s'il te demande de lui lire un mail, une newsletter ou un texte, lis-en l'essentiel en phrases parlées, sans limite de longueur, sans liens ni adresses.]";
 
 class Assistant {
   constructor() {
@@ -97,7 +98,7 @@ class Assistant {
           resume: this.data.sessionId || undefined,
           model: cfg.assistant?.model || cfg.model || undefined,
           permissionMode: 'acceptEdits',
-          allowedTools: ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TodoWrite', 'Bash(date:*)', 'Bash(cal:*)', 'mcp__maestro__projects_status', 'mcp__maestro__project_control', 'mcp__maestro__routines'],
+          allowedTools: ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TodoWrite', 'Skill', 'Bash(date:*)', 'Bash(cal:*)', 'mcp__maestro__projects_status', 'mcp__maestro__project_control', 'mcp__maestro__routines', 'mcp__maestro__claude_account'],
           systemAppend: this.systemAppend(),
           mcpServers: cfg.assistant?.mcpServers || {},
           settingSources: ['user'],
@@ -108,6 +109,8 @@ class Assistant {
             stepId: '__assistant',
             label: 'Assistant',
             cwd: paths.assistantDir,
+            // Lire (mails, routines claude.ai, notes…) sans te demander ; envoyer, créer ou supprimer passe toujours par ta boîte.
+            autoAllow: cfg.assistant?.autoAllowReads === false ? null : isReadOnlyCall,
             onEvent: (e) => {
               if (e.type === 'text' && !e.sub) {
                 reply = reply ? `${reply}\n\n${e.text}` : e.text;
@@ -147,6 +150,13 @@ class Assistant {
       `Nous sommes le ${now}.`,
       "Maestro orchestre des agents Claude Code sur ses projets de code. Tu peux consulter leur état (projects_status), lancer ou mettre en pause un projet (project_control) et gérer ses routines programmées (routines).",
       "Pour le reste (agenda, notes, mails, recherches…), utilise les outils MCP disponibles. S'il en manque un, dis-lui lequel ajouter dans les réglages de Maestro.",
+      "",
+      "## Son compte Claude",
+      "Tu tournes dans Claude Code connecté à son compte Claude : tu as ses skills, ses connecteurs claude.ai (Gmail, Agenda… : outils mcp__claude_ai_*) et ses routines claude.ai.",
+      "- Ses skills : outil claude_account (action skills pour la liste, skill + name pour le détail). Tu peux aussi en utiliser un avec l'outil Skill.",
+      "- Ses routines et tâches planifiées : outil RemoteTrigger action list (routines claude.ai, dans le cloud), outil claude_account action scheduled (tâches de l'app Claude sur ce Mac et routines Maestro). Donne pour chacune son nom, quand elle tourne et ce qu'elle fait, en clair (traduis les expressions cron en heures et jours). Ne crée, modifie ni lance une routine claude.ai sans son accord explicite.",
+      "- Ses newsletters : cherche dans Gmail les mails récents (par défaut les 2 derniers jours) qui ressemblent à des newsletters (lien de désinscription, « unsubscribe », catégorie promotions ou mises à jour, expéditeurs récurrents), puis lis-lui ou résume celle qu'il demande. Ne marque rien comme lu, ne supprime et n'envoie rien.",
+      "- Si un outil manque : pour Gmail, il doit connecter Gmail sur claude.ai (Paramètres › Connecteurs) avec le même compte que Claude Code sur ce Mac ; pour les routines, Claude Code doit être connecté avec son compte claude.ai (commande claude puis /login). Dis-le simplement.",
       `Ta mémoire durable est le fichier ${MEMORY} : relis-le si utile et ajoute-y (Edit) les informations durables qu'il te donne (préférences, contexte). N'y mets jamais de mots de passe.`,
       "Réponds en français, de façon directe et concise, en Markdown léger. Avant une action irréversible (envoyer un message, supprimer, payer), demande confirmation.",
       memory ? `\n## Mémoire actuelle\n${memory}` : '',
@@ -183,6 +193,31 @@ class Assistant {
           if (action === 'start') p.start();
           else p.pause();
           return `Projet ${p.plan.title} : ${action === 'start' ? 'lancé' : 'en pause'}.`;
+        },
+      },
+      {
+        name: 'claude_account',
+        description:
+          "Ton compte Claude sur ce Mac, en lecture : action skills (liste des skills perso et des plugins), skill (contenu d'un skill ou d'une tâche planifiée, par name), scheduled (tâches planifiées de l'app Claude sur ce Mac et routines Maestro). Pour les routines claude.ai dans le cloud, utilise RemoteTrigger action list.",
+        schema: { action: z.enum(['skills', 'skill', 'scheduled']), name: z.string().optional() },
+        handler: async ({ action, name }) => {
+          if (action === 'skills') {
+            const skills = listSkills();
+            return skills.length ? JSON.stringify(skills.map(({ name: n, description, source }) => ({ nom: n, description, source })), null, 1) : 'Aucun skill trouvé dans ~/.claude/skills ni dans les plugins installés.';
+          }
+          if (action === 'skill') {
+            const s = readSkillContent(name);
+            return s ? `# ${s.name} (${s.source})\n${s.content}` : `Aucun skill ni tâche planifiée nommé « ${name} ».`;
+          }
+          return JSON.stringify(
+            {
+              tâches_app_claude: listScheduledTasks().map(({ name: n, description, schedule }) => ({ nom: n, description, planification: schedule })),
+              routines_maestro: (getConfig().routines || []).map((r) => ({ nom: r.name, heure: r.time, jours: r.days, consigne: r.prompt, active: r.enabled })),
+              routines_claude_ai: 'Utilise RemoteTrigger action list pour les obtenir.',
+            },
+            null,
+            1,
+          );
         },
       },
       {
