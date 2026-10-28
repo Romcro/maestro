@@ -144,7 +144,7 @@ const P = {
 };
 const icon = (name, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || P.tool}</svg>`;
 const REACTOR = `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="32" cy="32" r="27" stroke="currentColor" stroke-opacity=".45" stroke-width="3.5" stroke-dasharray="1.8 3.6"/><circle cx="32" cy="32" r="19" stroke="currentColor" stroke-width="2.6" stroke-dasharray="22 7.8"/><circle cx="32" cy="32" r="12" stroke="currentColor" stroke-opacity=".6" stroke-width="1.2"/><circle cx="32" cy="32" r="7.5" fill="currentColor"/></svg>`;
-const BRAND = `<div class="brand">${REACTOR}<span>Maestro<small>Système en ligne</small></span></div>`;
+const BRAND = `<div class="brand">${REACTOR}<span>Chlamyd.I.A.<small>Système en ligne</small></span></div>`;
 
 const STATUS = {
   blocked: 'À venir',
@@ -234,7 +234,7 @@ function renderNow() {
     app.style.gridTemplateColumns = '1fr';
     app.innerHTML = `<main class="main"><div class="empty">
       ${BRAND.replace('class="brand"', 'class="brand" style="padding:0"')}
-      <h1>Ouvre Maestro depuis ton terminal</h1>
+      <h1>Ouvre Chlamyd.I.A. depuis ton terminal</h1>
       <p>Pour des raisons de sécurité, le tableau de bord a besoin du jeton que la commande lui transmet. Dans le dossier de ton projet, tape :</p>
       <div class="term"><span class="p">$ </span>maestro</div>
     </div></main>`;
@@ -262,7 +262,7 @@ function renderNow() {
   fab.dataset.state = coreState();
   document.querySelectorAll('.composer textarea, .chat-input textarea, .answer textarea').forEach(autosize);
   const n = S.inbox.length;
-  document.title = n ? `(${n}) Maestro` : 'Maestro';
+  document.title = n ? `(${n}) Chlamyd.I.A.` : 'Chlamyd.I.A.';
   if ('setAppBadge' in navigator) (n ? navigator.setAppBadge(n) : navigator.clearAppBadge()).catch?.(() => {});
 }
 
@@ -276,7 +276,7 @@ function renderSide() {
     <nav class="nav" aria-label="Navigation">
       <a class="nav-item" href="#/inbox"${cur('inbox')}>${icon('inbox')}<span>À traiter</span>${n ? `<span class="count">${n}</span>` : ''}</a>
       <a class="nav-item" href="#/assistant"${cur('assistant')}>${icon('chat')}<span>Assistant</span>${S.assistant.busy ? '<span class="dot on" style="margin-left:auto"></span>' : ''}</a>
-      <button class="nav-item" data-action="voice" title="Raccourci : ⌥ M">${icon('mic')}<span>${V.state === 'listening' ? 'J\'écoute…' : 'Parler à Maestro'}</span></button>
+      <button class="nav-item" data-action="voice" title="Raccourci : ⌥ M">${icon('mic')}<span>${V.state === 'listening' ? 'J\'écoute…' : 'Parler à Chlamyd.I.A.'}</span></button>
     </nav>
     <div class="nav-heading">Projets</div>
     <div class="projects">
@@ -299,7 +299,7 @@ function renderHome() {
   if (!projects.length) {
     return `<div class="empty">
       <h1>Ajoute ton premier projet</h1>
-      <p>Maestro lit le <code>PLAN.md</code> de ton projet, lance un agent Claude Code par étape, en parallèle quand c'est possible, et te prévient quand il a besoin de toi.</p>
+      <p>Chlamyd.I.A. lit le <code>PLAN.md</code> de ton projet, lance un agent Claude Code par étape, en parallèle quand c'est possible, et te prévient quand il a besoin de toi.</p>
       <p>Depuis un terminal, dans le dossier du projet :</p>
       <div class="term"><span class="p">$ </span>maestro</div>
       <p>Ou colle le chemin du dossier :</p>
@@ -335,7 +335,7 @@ function homeLine(projects) {
 const greet = () => { const h = new Date().getHours(); return h < 5 ? 'Bonne nuit' : h < 18 ? 'Bonjour' : 'Bonsoir'; };
 
 function renderMissing() {
-  return `<div class="empty"><h1>Projet introuvable</h1><p>Il a peut-être été retiré de Maestro.</p><p><a href="#/">Retour à l'accueil</a></p></div>`;
+  return `<div class="empty"><h1>Projet introuvable</h1><p>Il a peut-être été retiré de Chlamyd.I.A.</p><p><a href="#/">Retour à l'accueil</a></p></div>`;
 }
 
 // ------------------------------------------------------------------ projet
@@ -367,7 +367,7 @@ function whereText(p, withLink = true) {
 
 function renderProject(p) {
   const banners = [];
-  if (!p.exists) banners.push(banner('error', `Le dossier ${esc(p.path)} n'existe plus.`, `<button class="btn sm" data-action="remove-project" data-pid="${p.id}">Retirer de Maestro</button>`, 'warn'));
+  if (!p.exists) banners.push(banner('error', `Le dossier ${esc(p.path)} n'existe plus.`, `<button class="btn sm" data-action="remove-project" data-pid="${p.id}">Retirer de Chlamyd.I.A.</button>`, 'warn'));
   if (S.fake) banners.push(banner('wave', 'Mode simulé : les agents font semblant, rien n\'est envoyé à Claude.'));
   if (p.exists && !p.isGit) {
     banners.push(
@@ -381,7 +381,7 @@ function renderProject(p) {
     );
   }
   for (const w of p.warnings || []) banners.push(banner('error', esc(w), '', 'warn'));
-  if (!S.claude && !S.fake) banners.push(banner('terminal', "Maestro n'a pas trouvé la commande <code>claude</code>. Les agents utilisent ta connexion Claude Code : installe-la et connecte-toi une fois avec <code>claude</code> dans un terminal."));
+  if (!S.claude && !S.fake) banners.push(banner('terminal', "Chlamyd.I.A. n'a pas trouvé la commande <code>claude</code>. Les agents utilisent ta connexion Claude Code : installe-la et connecte-toi une fois avec <code>claude</code> dans un terminal."));
 
   const attn = S.inbox.filter((i) => i.projectId === p.id);
   const head = `
@@ -426,7 +426,7 @@ function renderNoPlan(p) {
   }
   return `<div class="empty" style="max-width:860px">
     <h1>Ce projet n'a pas encore de plan</h1>
-    <p>Maestro cherche un fichier <code>PLAN.md</code> à la racine du dossier. Chaque titre <code>## </code> devient une étape confiée à un agent.</p>
+    <p>Chlamyd.I.A. cherche un fichier <code>PLAN.md</code> à la racine du dossier. Chaque titre <code>## </code> devient une étape confiée à un agent.</p>
     ${p.planning?.status === 'failed' ? banner('error', `La rédaction a échoué : ${esc(p.planning.text)}`, '', 'warn') : ''}
     <div class="choice-grid">
       <form class="panel" data-form="generate-plan" data-pid="${p.id}">
@@ -708,7 +708,7 @@ function renderBrief(p, s) {
     ${s.after.length ? `<p class="muted" style="margin:0">Démarre après ${s.after.map((a) => `l'étape ${esc(a)}`).join(' et ')}.</p>` : ''}
     ${s.items.length ? `<div class="todos">${s.items.map((it) => `<div class="${it.done ? 'completed' : ''}">${it.done ? '✓' : '○'} ${esc(it.text)}</div>`).join('')}</div>` : ''}
     ${s.body ? md(s.body) : '<p class="muted" style="margin:0">Pas de consigne supplémentaire dans le plan.</p>'}
-    <p class="muted" style="margin:0;font-size:13px">Modifie la consigne directement dans ${esc(p.planFile || 'PLAN.md')} : Maestro relit le fichier à chaque changement.</p>
+    <p class="muted" style="margin:0;font-size:13px">Modifie la consigne directement dans ${esc(p.planFile || 'PLAN.md')} : Chlamyd.I.A. relit le fichier à chaque changement.</p>
   </div>`;
 }
 
@@ -798,7 +798,7 @@ const SILENCE_LIMIT = 120_000;
 
 function listen() {
   if (V.rec) return finishListening(); // deuxième clic : envoie ce qui a été entendu
-  if (!SR) return toast({ title: 'Micro indisponible ici', body: 'Ouvre Maestro dans Chrome ou Safari pour lui parler.', kind: 'error' });
+  if (!SR) return toast({ title: 'Micro indisponible ici', body: 'Ouvre Chlamyd.I.A. dans Chrome ou Safari pour lui parler.', kind: 'error' });
   V.loopNext = false;
   TTS?.cancel();
   V.said = '';
@@ -832,7 +832,7 @@ function startRecognition() {
   rec.onerror = (e) => {
     if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
       V.fatal = true;
-      toast({ title: 'Micro refusé', body: "Autorise le micro pour Maestro : clique sur l'icône à gauche de l'adresse, ou Réglages Système › Confidentialité et sécurité › Micro.", kind: 'error' });
+      toast({ title: 'Micro refusé', body: "Autorise le micro pour Chlamyd.I.A. : clique sur l'icône à gauche de l'adresse, ou Réglages Système › Confidentialité et sécurité › Micro.", kind: 'error' });
     } else if (e.error === 'network') {
       V.fatal = true;
       toast({ title: 'Transcription impossible', body: 'La reconnaissance vocale du navigateur a besoin d\'internet.', kind: 'error' });
@@ -897,6 +897,7 @@ function speechText(src) {
     .replace(/^\s*(?:[-*•]|\d+[.)])\s+/gm, '')
     .replace(/^#{1,6}\s+/gm, '')
     .replace(/[*_>#|~]/g, '')
+    .replace(/Chlamyd\.?\s?I\.?\s?A\.?/gi, 'Chlamydia') // le nom se prononce d'un seul mot
     .replace(/\n{2,}/g, '.\n')
     .trim();
   if (t.length > 1400) t = `${t.slice(0, 1400).replace(/[^.!?]*$/, '')} La suite est affichée à l'écran.`;
@@ -959,13 +960,13 @@ function renderCore() {
     ? `<div class="core-heard">${esc(V.heard)}</div>`
     : st === 'idle' ? `<div class="core-heard hint">Clique sur le réacteur ou appuie sur <kbd>⌥ M</kbd> pour parler.${V.prefs.replies ? ' Je te répondrai à voix haute.' : ''}</div>`
     : st === 'listening' && V.prefs.waitEnd ? '<div class="core-heard hint">Prends ton temps. Dis « j\'ai fini » ou clique sur le réacteur pour envoyer.</div>'
-    : st === 'off' ? '<div class="core-heard hint">Ouvre Maestro dans Chrome ou Safari pour lui parler.</div>'
+    : st === 'off' ? '<div class="core-heard hint">Ouvre Chlamyd.I.A. dans Chrome ou Safari pour lui parler.</div>'
     : st === 'speaking' ? '<div class="core-heard hint">Clique sur le réacteur pour m\'interrompre.</div>'
     : '<div class="core-heard"></div>';
   // La phase négative garde les anneaux en mouvement continu malgré les re-rendus.
   const ph = (performance.now() / 1000).toFixed(2);
   return `<div class="core-wrap">
-    <button class="core" data-action="core" data-state="${st}" style="--ph:-${ph}s" aria-label="${st === 'listening' ? 'Arrêter l\'écoute' : st === 'speaking' ? 'Arrêter la voix' : 'Parler à Maestro'}"><span class="ring ticks"></span><span class="ring arcs"></span><span class="ring arcs2"></span><span class="eye"></span></button>
+    <button class="core" data-action="core" data-state="${st}" style="--ph:-${ph}s" aria-label="${st === 'listening' ? 'Arrêter l\'écoute' : st === 'speaking' ? 'Arrêter la voix' : 'Parler à Chlamyd.I.A.'}"><span class="ring ticks"></span><span class="ring arcs"></span><span class="ring arcs2"></span><span class="eye"></span></button>
     <div class="core-info"><div class="core-status ${st}">${label}</div>${heard}</div>
   </div>`;
 }
@@ -1006,7 +1007,7 @@ function openSettings(section) {
             <option value="always" ${c.notifications?.native === 'always' ? 'selected' : ''}>Toujours</option>
             <option value="never" ${c.notifications?.native === 'never' ? 'selected' : ''}>Jamais</option>
           </select>
-          <div class="help">Installe <code>terminal-notifier</code> (<code>brew install terminal-notifier</code>) pour qu'un clic sur la notification ouvre Maestro.</div></div>
+          <div class="help">Installe <code>terminal-notifier</code> (<code>brew install terminal-notifier</code>) pour qu'un clic sur la notification ouvre Chlamyd.I.A.</div></div>
         <div class="field"><label for="f-sound">Son</label><input id="f-sound" class="switch" type="checkbox" name="sound" ${c.notifications?.sound ? 'checked' : ''}><div class="help"></div></div>
         <div class="field"><span></span><button class="btn sm" type="button" data-action="test-notif">${icon('bell')}Envoyer une notification de test</button></div>
 
@@ -1017,7 +1018,7 @@ function openSettings(section) {
         <div class="panel" style="margin-top:12px">
           <div class="btn-row" style="flex-wrap:nowrap"><input type="text" name="r-name" placeholder="Nom (ex. Brief du matin)"><input type="time" name="r-time" value="08:30" style="width:120px"></div>
           <div class="days">${dayNames.map((d, i) => `<label><input type="checkbox" name="r-day" value="${i + 1}" ${i < 5 ? 'checked' : ''}><span>${d}</span></label>`).join('')}</div>
-          <textarea name="r-prompt" rows="2" placeholder="Consigne (ex. Résume mon agenda du jour et l'état de mes projets Maestro)"></textarea>
+          <textarea name="r-prompt" rows="2" placeholder="Consigne (ex. Résume mon agenda du jour et l'état de mes projets)"></textarea>
           <div><button class="btn sm" type="button" data-action="routine-add">${icon('plus')}Ajouter la routine</button></div>
         </div>
 
@@ -1030,21 +1031,21 @@ function openSettings(section) {
         <div class="field"><label for="f-amodel">Modèle de l'assistant</label><input id="f-amodel" type="text" name="amodel" value="${esc(c.assistant?.model || '')}" placeholder="par défaut" style="width:180px"><div class="help"></div></div>
 
         <h3 style="margin:22px 0 0" id="voice">Voix</h3>
-        ${SR ? '' : '<p class="muted">La reconnaissance vocale n\'est pas disponible dans ce navigateur : ouvre Maestro dans Chrome ou Safari pour parler au micro.</p>'}
-        <div class="field"><label for="v-waitend">Attendre que j'aie fini</label><input id="v-waitend" class="switch" type="checkbox" name="v-waitend" ${vp.waitEnd ? 'checked' : ''}><div class="help">Maestro ne coupe pas pendant tes pauses : termine par « j'ai fini », « c'est tout » ou « à toi », ou clique sur le réacteur. Désactivé, il envoie dès que tu te tais.</div></div>
+        ${SR ? '' : '<p class="muted">La reconnaissance vocale n\'est pas disponible dans ce navigateur : ouvre Chlamyd.I.A. dans Chrome ou Safari pour parler au micro.</p>'}
+        <div class="field"><label for="v-waitend">Attendre que j'aie fini</label><input id="v-waitend" class="switch" type="checkbox" name="v-waitend" ${vp.waitEnd ? 'checked' : ''}><div class="help">Chlamyd.I.A. ne coupe pas pendant tes pauses : termine par « j'ai fini », « c'est tout » ou « à toi », ou clique sur le réacteur. Désactivé, il envoie dès que tu te tais.</div></div>
         <div class="field"><label for="v-replies">Répondre à voix haute</label><input id="v-replies" class="switch" type="checkbox" name="v-replies" ${vp.replies ? 'checked' : ''}><div class="help">Quand tu parles au micro, la réponse est lue à voix haute.</div></div>
         <div class="field"><label for="v-all">Lire toutes les réponses</label><input id="v-all" class="switch" type="checkbox" name="v-all" ${vp.all ? 'checked' : ''}><div class="help">Même celles écrites au clavier et celles des routines.</div></div>
         <div class="field"><label for="v-loop">Conversation continue</label><input id="v-loop" class="switch" type="checkbox" name="v-loop" ${vp.loop ? 'checked' : ''}><div class="help">Le micro se rouvre après chaque réponse parlée. Clique sur le réacteur ou appuie sur Échap pour arrêter.</div></div>
         <div class="field"><label for="v-announce">Annonces vocales</label><input id="v-announce" class="switch" type="checkbox" name="v-announce" ${vp.announce ? 'checked' : ''}><div class="help">Annonce à voix haute quand une étape attend ta réponse, ta validation, ou échoue.</div></div>
         <div class="field"><label for="v-voice">Voix</label>
           <select id="v-voice" name="v-voice"><option value="">Automatique : la plus naturelle</option>${frVoices().filter((v) => !NOVELTY.test(v.name)).map((v) => `<option value="${esc(v.name)}" ${v.name === vp.voice ? 'selected' : ''}>${naturalVoice(v) ? '★ ' : ''}${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select>
-          <div class="help">${frVoices().some(naturalVoice) ? 'Les voix ★ sont les plus naturelles.' : 'Aucune voix naturelle installée : elles sonnent robotiques.'} Pour en ajouter une sur Mac : Réglages Système › Accessibilité › Contenu énoncé › Voix du système › Gérer les voix… › Français, télécharge une voix « Premium » ou « Améliorée » (ex. Audrey Premium), puis recharge Maestro.</div></div>
+          <div class="help">${frVoices().some(naturalVoice) ? 'Les voix ★ sont les plus naturelles.' : 'Aucune voix naturelle installée : elles sonnent robotiques.'} Pour en ajouter une sur Mac : Réglages Système › Accessibilité › Contenu énoncé › Voix du système › Gérer les voix… › Français, télécharge une voix « Premium » ou « Améliorée » (ex. Audrey Premium), puis recharge Chlamyd.I.A.</div></div>
         <div class="field"><label for="v-rate">Vitesse</label><input id="v-rate" type="range" name="v-rate" min="0.8" max="1.4" step="0.05" value="${vp.rate}"><div class="help"></div></div>
         <div class="field"><span></span><button class="btn sm" type="button" data-action="voice-test">${icon('mic')}Tester la voix</button></div>
 
         <h3 style="margin:22px 0 0">Affichage</h3>
         <div class="field"><label for="f-theme">Thème</label><select id="f-theme" name="theme"><option value="system" ${theme === 'system' ? 'selected' : ''}>Comme macOS</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Sombre</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Clair</option></select><div class="help"></div></div>
-        <div class="field"><label for="f-open">Ouvrir Maestro</label><select id="f-open" name="openAs"><option value="app" ${c.openAs !== 'browser' ? 'selected' : ''}>Dans une fenêtre d'app</option><option value="browser" ${c.openAs === 'browser' ? 'selected' : ''}>Dans un onglet</option></select><div class="help">Tu peux aussi l'installer depuis Chrome : menu ⋮ › Caster, enregistrer et partager › Installer la page en tant qu'appli.</div></div>
+        <div class="field"><label for="f-open">Ouvrir Chlamyd.I.A.</label><select id="f-open" name="openAs"><option value="app" ${c.openAs !== 'browser' ? 'selected' : ''}>Dans une fenêtre d'app</option><option value="browser" ${c.openAs === 'browser' ? 'selected' : ''}>Dans un onglet</option></select><div class="help">Tu peux aussi l'installer depuis Chrome : menu ⋮ › Caster, enregistrer et partager › Installer la page en tant qu'appli.</div></div>
       </div>
       <div class="dlg-foot"><button class="btn ghost" value="cancel">Annuler</button><button class="btn primary" value="save" data-action="settings-save">Enregistrer</button></div>
     </form>`;
@@ -1217,7 +1218,7 @@ document.addEventListener('click', async (e) => {
     case 'init-git': act('POST', `/api/projects/${pid}/init-git`, null, 'Dépôt git initialisé'); break;
     case 'template': act('POST', `/api/projects/${pid}/template`, null, 'PLAN.md créé'); break;
     case 'open-editor': act('POST', `/api/projects/${pid}/open-editor`); break;
-    case 'remove-project': if (confirm('Retirer ce projet de Maestro ? Tes fichiers ne sont pas touchés.')) { await act('DELETE', `/api/projects/${pid}`); go('/'); } break;
+    case 'remove-project': if (confirm('Retirer ce projet de Chlamyd.I.A. ? Tes fichiers ne sont pas touchés.')) { await act('DELETE', `/api/projects/${pid}`); go('/'); } break;
     case 'scroll-attn': $('#attn')?.scrollIntoView({ behavior: 'smooth', block: 'start' }); break;
     case 'answer': {
       const body = t.dataset.choice ? { choice: t.dataset.choice } : { text: t.dataset.text };

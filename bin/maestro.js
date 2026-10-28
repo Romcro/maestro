@@ -54,7 +54,7 @@ async function ensureServer() {
     await new Promise((r) => setTimeout(r, 150));
     if (await health()) return;
   }
-  throw new Error(`Le serveur Maestro ne démarre pas. Regarde ${paths.log}`);
+  throw new Error(`Le serveur Chlamyd.I.A. ne démarre pas. Regarde ${paths.log}`);
 }
 
 /**
@@ -106,7 +106,7 @@ const commands = {
     await ensureServer();
     const p = await api('POST', '/api/projects', { path: dir });
     const plan = findPlan(dir);
-    console.log(`${c.violet('◆ Maestro')}  ${c.bold(p.title)}  ${c.dim(dir)}`);
+    console.log(`${c.violet('◆ Chlamyd.I.A.')}  ${c.bold(p.title)}  ${c.dim(dir)}`);
     if (!plan) console.log(c.dim('  Pas encore de PLAN.md : crée-le depuis le tableau de bord, ou lance `maestro init`.'));
     else console.log(c.dim(`  ${p.totals.done}/${p.totals.total} étapes terminées · tableau de bord : ${BASE}`));
     openDashboard(`#/p/${p.id}`);
@@ -135,9 +135,9 @@ const commands = {
   },
 
   async status() {
-    if (!(await health())) return console.log(c.dim('Maestro ne tourne pas.'));
+    if (!(await health())) return console.log(c.dim('Chlamyd.I.A. ne tourne pas.'));
     const s = await api('GET', '/api/state');
-    console.log(`${c.violet('◆ Maestro')} ${s.version}  ${BASE}`);
+    console.log(`${c.violet('◆ Chlamyd.I.A.')} ${s.version}  ${BASE}`);
     for (const p of s.projects) {
       console.log(`  ${p.running ? c.green('●') : c.dim('○')} ${c.bold(p.title)}  ${p.totals.done}/${p.totals.total}  ${c.dim(`$${p.totals.cost.toFixed(2)}`)}`);
       for (const st of p.steps.filter((x) => !['done', 'blocked', 'ready'].includes(x.status))) {
@@ -148,9 +148,9 @@ const commands = {
   },
 
   async stop() {
-    if (!(await health())) return console.log(c.dim('Maestro ne tourne pas.'));
+    if (!(await health())) return console.log(c.dim('Chlamyd.I.A. ne tourne pas.'));
     await api('POST', '/api/shutdown');
-    console.log('Maestro arrêté.');
+    console.log('Chlamyd.I.A. arrêté.');
   },
 
   async service(args) {
@@ -158,7 +158,7 @@ const commands = {
     if (args[0] === 'uninstall') {
       try { execFileSync('launchctl', ['unload', PLIST]); } catch {}
       if (fs.existsSync(PLIST)) fs.unlinkSync(PLIST);
-      return console.log('Maestro ne démarrera plus automatiquement.');
+      return console.log('Chlamyd.I.A. ne démarrera plus automatiquement.');
     }
     if (await health()) await api('POST', '/api/shutdown').catch(() => {});
     const shellPath = (() => {
@@ -182,13 +182,13 @@ const commands = {
     );
     try { execFileSync('launchctl', ['unload', PLIST], { stdio: 'ignore' }); } catch {}
     execFileSync('launchctl', ['load', PLIST]);
-    console.log(c.green('Maestro démarrera automatiquement à chaque ouverture de session.'));
+    console.log(c.green('Chlamyd.I.A. démarrera automatiquement à chaque ouverture de session.'));
   },
 
   async update() {
     const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: REPO_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trim();
     const tryRun = (cmd, args) => { try { return run(cmd, args); } catch { return null; } };
-    console.log(`${c.violet('◆ Maestro')} — mise à jour`);
+    console.log(`${c.violet('◆ Chlamyd.I.A.')} — mise à jour`);
 
     // Installation depuis un zip : on relie le dossier au dépôt GitHub.
     if (!fs.existsSync(path.join(REPO_DIR, '.git'))) {
@@ -226,7 +226,7 @@ const commands = {
 
     const version = JSON.parse(pkgAfter).version;
     if (await health()) {
-      console.log(c.dim('  Redémarrage de Maestro (les agents en cours seront à reprendre d\'un clic)…'));
+      console.log(c.dim('  Redémarrage de Chlamyd.I.A. (les agents en cours seront à reprendre d\'un clic)…'));
       await api('POST', '/api/shutdown').catch(() => {});
       await new Promise((r) => setTimeout(r, 600));
       if (process.platform === 'darwin' && fs.existsSync(PLIST)) {
@@ -238,18 +238,18 @@ const commands = {
         spawn(process.execPath, [SELF, 'serve'], { detached: true, stdio: ['ignore', out, out] }).unref();
       }
     }
-    console.log(c.green(`  Maestro est à jour (version ${version}).`));
+    console.log(c.green(`  Chlamyd.I.A. est à jour (version ${version}).`));
   },
 
   help() {
-    console.log(`${c.violet('◆ Maestro')} — chef d'orchestre pour agents Claude Code
+    console.log(`${c.violet('◆ Chlamyd.I.A.')} — chef d'orchestre pour agents Claude Code
 
   ${c.bold('maestro')} [dossier]       Ajoute le projet et ouvre le tableau de bord
   ${c.bold('maestro init')} [dossier]  Crée un PLAN.md modèle puis ouvre le projet
   ${c.bold('maestro open')}            Ouvre le tableau de bord
   ${c.bold('maestro status')}          État des projets dans le terminal
-  ${c.bold('maestro stop')}            Arrête Maestro (et les agents en cours)
-  ${c.bold('maestro service')}         Lance Maestro automatiquement au démarrage du Mac
+  ${c.bold('maestro stop')}            Arrête Chlamyd.I.A. (et les agents en cours)
+  ${c.bold('maestro service')}         Lance Chlamyd.I.A. automatiquement au démarrage du Mac
   ${c.bold('maestro service uninstall')}
   ${c.bold('maestro update')}          Installe la dernière version depuis GitHub
 `);
