@@ -172,6 +172,26 @@ await test('projet sans git : une étape à la fois, dans le dossier', async () 
   await wait(() => p.summary().steps[1].status === 'review');
 });
 
+console.log('Assistant');
+await test('mode vocal : consigne de réponse parlée et messages marqués', async () => {
+  const { assistant, VOICE_HINT } = await import('../src/assistant.js');
+  assistant.init();
+  const before = assistant.data.messages.length;
+  assistant.send('Où en sont mes projets ?', { voice: true });
+  await wait(() => assistant.data.messages.length >= before + 2 && !assistant.busy);
+  const [q, a] = assistant.data.messages.slice(before);
+  assert.equal(q.voice, true);
+  assert.equal(q.text, 'Où en sont mes projets ?', 'la consigne vocale reste invisible dans la conversation');
+  assert.equal(a.role, 'assistant');
+  assert.equal(a.voice, true);
+  assert.doesNotMatch(a.text, /[*_#`]/, 'réponse sans Markdown, prête à être lue');
+  assert.match(VOICE_HINT, /voix haute/);
+  assistant.send('Et en texte ?');
+  await wait(() => assistant.data.messages.length >= before + 4 && !assistant.busy);
+  assert.equal(assistant.data.messages.at(-1).voice, undefined);
+  assert.match(assistant.data.messages.at(-1).text, /\*\*/);
+});
+
 console.log(`\n${passed} test(s) réussi(s)${process.exitCode ? ', des échecs' : ''}.`);
 for (const pr of manager.projects.values()) pr.dispose();
 fs.rmSync(tmp, { recursive: true, force: true });

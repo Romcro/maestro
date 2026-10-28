@@ -291,7 +291,9 @@ async function fakeRun(o, tools, emit) {
       emit({ type: 'tool', icon: 'plug', name: 'mcp__maestro__projects_status', label: 'maestro · projects_status' });
       const status = JSON.parse(await toolByName.projects_status.handler({}));
       await wait(600);
-      const text = `_(simulation)_ Tu as ${status.length} projet${status.length > 1 ? 's' : ''} :\n${status.map((p) => `- **${p.projet}** : ${p.progression} étapes, ${p.actif ? 'en cours' : 'en pause'}`).join('\n')}`;
+      const text = o.prompt.startsWith('[Message dicté')
+        ? `Simulation : tu as ${status.length} projet${status.length > 1 ? 's' : ''} suivi${status.length > 1 ? 's' : ''}. Tout est sous contrôle.`
+        : `_(simulation)_ Tu as ${status.length} projet${status.length > 1 ? 's' : ''} :\n${status.map((p) => `- **${p.projet}** : ${p.progression} étapes, ${p.actif ? 'en cours' : 'en pause'}`).join('\n')}`;
       emit({ type: 'text', text });
       return { sessionId, ok: true, text, cost: 0.003, turns: 2 };
     }

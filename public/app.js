@@ -139,10 +139,12 @@ const P = {
   menu: '<path d="M4 7h16M4 12h16M4 17h16"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 12a2 2 0 0 0 2 2h6a2 2 0 0 0 2-2l1-12M9 7V4h6v3"/>',
   wave: '<path d="M3 12c2.5-6 5.5-6 8 0s5.5 6 8 0"/>',
+  mic: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/>',
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
 };
 const icon = (name, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || P.tool}</svg>`;
-const BATON = `<svg viewBox="0 0 64 64" aria-hidden="true"><g stroke="currentColor" stroke-opacity=".35" stroke-width="2"><path d="M8 24h48M8 32h48M8 40h48"/></g><path d="M14 50L47 13" stroke="currentColor" stroke-width="4.5" stroke-linecap="round"/><circle cx="49" cy="11" r="4.5" fill="currentColor"/></svg>`;
+const REACTOR = `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="32" cy="32" r="27" stroke="currentColor" stroke-opacity=".45" stroke-width="3.5" stroke-dasharray="1.8 3.6"/><circle cx="32" cy="32" r="19" stroke="currentColor" stroke-width="2.6" stroke-dasharray="22 7.8"/><circle cx="32" cy="32" r="12" stroke="currentColor" stroke-opacity=".6" stroke-width="1.2"/><circle cx="32" cy="32" r="7.5" fill="currentColor"/></svg>`;
+const BRAND = `<div class="brand">${REACTOR}<span>Maestro<small>Système en ligne</small></span></div>`;
 
 const STATUS = {
   blocked: 'À venir',
@@ -231,7 +233,7 @@ function renderNow() {
     app.className = 'app';
     app.style.gridTemplateColumns = '1fr';
     app.innerHTML = `<main class="main"><div class="empty">
-      <div class="brand" style="padding:0">${BATON}<span>Maestro</span></div>
+      ${BRAND.replace('class="brand"', 'class="brand" style="padding:0"')}
       <h1>Ouvre Maestro depuis ton terminal</h1>
       <p>Pour des raisons de sécurité, le tableau de bord a besoin du jeton que la commande lui transmet. Dans le dossier de ton projet, tape :</p>
       <div class="term"><span class="p">$ </span>maestro</div>
@@ -255,6 +257,9 @@ function renderNow() {
   patch($('#shell-main'), main);
   if (step) patch($('#shell-detail'), renderDetail(project, step));
   if (project) requestAnimationFrame(drawLinks);
+  const fab = $('#voice-fab');
+  fab.hidden = R.view === 'assistant';
+  fab.dataset.state = coreState();
   document.querySelectorAll('.composer textarea, .chat-input textarea, .answer textarea').forEach(autosize);
   const n = S.inbox.length;
   document.title = n ? `(${n}) Maestro` : 'Maestro';
@@ -267,10 +272,11 @@ function renderSide() {
   const cur = (v, pid) => (R.view === v && (!pid || R.pid === pid) ? ' aria-current="page"' : '');
   const projects = S.order.map((id) => S.projects.get(id)).filter(Boolean);
   return `
-    <div class="brand">${BATON}<span>Maestro</span></div>
+    ${BRAND}
     <nav class="nav" aria-label="Navigation">
       <a class="nav-item" href="#/inbox"${cur('inbox')}>${icon('inbox')}<span>À traiter</span>${n ? `<span class="count">${n}</span>` : ''}</a>
       <a class="nav-item" href="#/assistant"${cur('assistant')}>${icon('chat')}<span>Assistant</span>${S.assistant.busy ? '<span class="dot on" style="margin-left:auto"></span>' : ''}</a>
+      <button class="nav-item" data-action="voice" title="Raccourci : ⌥ M">${icon('mic')}<span>${V.state === 'listening' ? 'J\'écoute…' : 'Parler à Maestro'}</span></button>
     </nav>
     <div class="nav-heading">Projets</div>
     <div class="projects">
@@ -729,11 +735,13 @@ function renderAssistant() {
         ${msgs.length ? `<button class="btn ghost sm" data-action="assistant-reset">Nouvelle conversation</button>` : ''}
       </div>
     </div>
+    ${renderCore()}
     <div class="chat-log" data-scroll="chat">
       ${msgs.length ? '' : `<div class="empty" style="padding:24px 0"><p>Demande-lui ce que tu veux, en français, comme à un collègue.</p><div class="suggestions">${suggestions.map((s) => `<button data-action="suggest" data-text="${esc(s)}">${esc(s)}</button>`).join('')}</div></div>`}
       ${msgs.map((m) => `
         <div class="msg ${m.role}">
           ${m.routine && m.role === 'user' ? `<span class="tag">Routine « ${esc(m.routine)} » · ${clock(m.at)}</span>` : ''}
+          ${m.voice && m.role === 'user' ? `<span class="tag">${icon('mic')}Dicté au micro</span>` : ''}
           ${m.role === 'user' ? `<div>${esc(m.text).replace(/\n/g, '<br>')}</div>` : `${m.tools?.length ? `<div class="tools">${m.tools.map((t) => `<span>${esc(t.label)}</span>`).join('')}</div>` : ''}${md(m.text)}`}
         </div>`).join('')}
       ${a.busy ? `<div class="msg assistant">${a.live?.tools?.length ? `<div class="tools">${a.live.tools.map((t) => `<span>${esc(t.label)}</span>`).join('')}</div>` : ''}${a.live?.text ? md(a.live.text) : ''}<div class="typing"><i></i><i></i><i></i></div></div>` : ''}
@@ -741,8 +749,168 @@ function renderAssistant() {
     <form class="chat-input" data-form="assistant">
       ${draft('assistant', 'Écris à ton assistant…  (Entrée pour envoyer, Maj+Entrée pour une nouvelle ligne)')}
       ${a.busy ? `<button class="btn icon" type="button" data-action="assistant-stop" aria-label="Arrêter">${icon('stop')}</button>` : ''}
+      <button class="btn icon mic${V.state === 'listening' ? ' on' : ''}" type="button" data-action="voice" aria-label="${V.state === 'listening' ? 'Arrêter l\'écoute' : 'Parler'}" title="Parler (⌥ M)">${icon('mic')}</button>
       <button class="btn primary icon" type="submit" aria-label="Envoyer">${icon('send')}</button>
     </form>
+  </div>`;
+}
+
+// ------------------------------------------------------------------ voix
+// Web Speech API du navigateur : reconnaissance (Chrome, Safari) et synthèse vocale, sans clé ni serveur.
+const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
+const TTS = 'speechSynthesis' in window ? window.speechSynthesis : null;
+const VOICE_DEFAULTS = { replies: true, all: false, loop: false, announce: false, voice: '', rate: 1.05 };
+const V = {
+  state: 'idle', // idle | listening | speaking (thinking se déduit de l'assistant)
+  heard: '',
+  awaiting: false, // une question dictée ici attend sa réponse
+  loopNext: false,
+  rec: null,
+  prefs: (() => {
+    try { return { ...VOICE_DEFAULTS, ...JSON.parse(localStorage.getItem('maestro.voice') || '{}') }; } catch { return { ...VOICE_DEFAULTS }; }
+  })(),
+};
+TTS?.getVoices(); // déclenche le chargement des voix
+const saveVoicePrefs = () => { try { localStorage.setItem('maestro.voice', JSON.stringify(V.prefs)); } catch {} };
+const voiceForm = (f) => ({
+  replies: !!f.get('v-replies'),
+  all: !!f.get('v-all'),
+  loop: !!f.get('v-loop'),
+  announce: !!f.get('v-announce'),
+  voice: String(f.get('v-voice') || ''),
+  rate: Number(f.get('v-rate')) || VOICE_DEFAULTS.rate,
+});
+function setVoice(state, heard = '') {
+  V.state = state;
+  V.heard = heard;
+  render();
+}
+function coreState() {
+  if (!SR && !TTS) return 'off';
+  if (V.state !== 'idle') return V.state;
+  return S.assistant.busy ? 'thinking' : 'idle';
+}
+
+function listen() {
+  if (V.rec) return V.rec.stop(); // deuxième clic : envoie ce qui a été entendu
+  if (!SR) return toast({ title: 'Micro indisponible ici', body: 'Ouvre Maestro dans Chrome ou Safari pour lui parler.', kind: 'error' });
+  V.loopNext = false;
+  TTS?.cancel();
+  const rec = new SR();
+  rec.lang = 'fr-FR';
+  rec.interimResults = true;
+  rec.continuous = false;
+  let final = '';
+  rec.onresult = (e) => {
+    let interim = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) final += e.results[i][0].transcript;
+      else interim += e.results[i][0].transcript;
+    }
+    setVoice('listening', `${final} ${interim}`.trim());
+  };
+  rec.onerror = (e) => {
+    if (e.error === 'not-allowed' || e.error === 'service-not-allowed') {
+      toast({ title: 'Micro refusé', body: "Autorise le micro pour Maestro : clique sur l'icône à gauche de l'adresse, ou Réglages Système › Confidentialité et sécurité › Micro.", kind: 'error' });
+    } else if (e.error === 'network') {
+      toast({ title: 'Transcription impossible', body: 'La reconnaissance vocale du navigateur a besoin d\'internet.', kind: 'error' });
+    } else if (e.error !== 'no-speech' && e.error !== 'aborted') {
+      toast({ title: 'Micro', body: e.error, kind: 'error' });
+    }
+  };
+  rec.onend = () => {
+    const text = V.heard.trim();
+    V.rec = null;
+    setVoice('idle');
+    if (V.cancelled) { V.cancelled = false; return; }
+    if (text) {
+      V.awaiting = true;
+      sendAssistant(text, { voice: true });
+    }
+  };
+  V.rec = rec;
+  setVoice('listening');
+  try { rec.start(); } catch { V.rec = null; setVoice('idle'); }
+}
+
+function stopVoice() {
+  V.loopNext = false;
+  if (V.rec) { V.cancelled = true; V.rec.abort(); }
+  TTS?.cancel();
+  setVoice('idle');
+}
+
+/** Transforme une réponse Markdown en texte agréable à écouter. */
+function speechText(src) {
+  let t = String(src || '')
+    .replace(/```[\s\S]*?```/g, ' Le code est affiché à l\'écran. ')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
+    .replace(/https?:\/\/\S+/g, 'le lien affiché')
+    .replace(/^\s*(?:[-*•]|\d+[.)])\s+/gm, '')
+    .replace(/^#{1,6}\s+/gm, '')
+    .replace(/[*_>#|~]/g, '')
+    .replace(/\n{2,}/g, '.\n')
+    .trim();
+  if (t.length > 1400) t = `${t.slice(0, 1400).replace(/[^.!?]*$/, '')} La suite est affichée à l'écran.`;
+  return t;
+}
+const frVoices = () => (TTS?.getVoices() || []).filter((v) => /^fr/i.test(v.lang));
+function pickVoice(name) {
+  const all = frVoices();
+  return all.find((v) => v.name === name)
+    || all.find((v) => /thomas/i.test(v.name) && /amélior|enhanced|premium/i.test(v.name))
+    || all.find((v) => /thomas/i.test(v.name))
+    || all.find((v) => /fr[-_]FR/i.test(v.lang))
+    || all[0] || null;
+}
+
+function speak(text, prefs = V.prefs) {
+  if (!TTS) return;
+  const t = speechText(text);
+  if (!t) return;
+  TTS.cancel();
+  // Phrases regroupées par morceaux courts : Chrome coupe les énoncés trop longs.
+  const chunks = [];
+  let cur = '';
+  for (const part of t.match(/[^.!?…\n]+[.!?…]*\s*|\n/g) || [t]) {
+    if (cur && (cur + part).length > 220) { chunks.push(cur); cur = ''; }
+    cur += part;
+  }
+  if (cur.trim()) chunks.push(cur);
+  const voice = pickVoice(prefs.voice);
+  chunks.forEach((c, i) => {
+    const u = new SpeechSynthesisUtterance(c.trim());
+    u.lang = voice?.lang || 'fr-FR';
+    if (voice) u.voice = voice;
+    u.rate = prefs.rate || 1;
+    u.pitch = 0.95;
+    if (i === 0) u.onstart = () => setVoice('speaking');
+    if (i === chunks.length - 1) {
+      u.onend = () => {
+        if (V.state === 'speaking') setVoice('idle');
+        if (V.loopNext && V.prefs.loop && !V.rec) { V.loopNext = false; setTimeout(listen, 300); }
+      };
+      u.onerror = () => { if (V.state === 'speaking') setVoice('idle'); };
+    }
+    TTS.speak(u);
+  });
+}
+
+function renderCore() {
+  const st = coreState();
+  const label = { off: 'Voix indisponible', idle: 'En veille', listening: "J'écoute…", thinking: 'Analyse en cours…', speaking: 'Réponse vocale' }[st];
+  const heard = V.heard
+    ? `<div class="core-heard">${esc(V.heard)}</div>`
+    : st === 'idle' ? `<div class="core-heard hint">Clique sur le réacteur ou appuie sur <kbd>⌥ M</kbd> pour parler.${V.prefs.replies ? ' Je te répondrai à voix haute.' : ''}</div>`
+    : st === 'off' ? '<div class="core-heard hint">Ouvre Maestro dans Chrome ou Safari pour lui parler.</div>'
+    : st === 'speaking' ? '<div class="core-heard hint">Clique sur le réacteur pour m\'interrompre.</div>'
+    : '<div class="core-heard"></div>';
+  // La phase négative garde les anneaux en mouvement continu malgré les re-rendus.
+  const ph = (performance.now() / 1000).toFixed(2);
+  return `<div class="core-wrap">
+    <button class="core" data-action="core" data-state="${st}" style="--ph:-${ph}s" aria-label="${st === 'listening' ? 'Arrêter l\'écoute' : st === 'speaking' ? 'Arrêter la voix' : 'Parler à Maestro'}"><span class="ring ticks"></span><span class="ring arcs"></span><span class="ring arcs2"></span><span class="eye"></span></button>
+    <div class="core-info"><div class="core-status ${st}">${label}</div>${heard}</div>
   </div>`;
 }
 
@@ -753,6 +921,7 @@ function openSettings(section) {
   const theme = (() => { try { return localStorage.getItem('maestro.theme') || 'system'; } catch { return 'system'; } })();
   const notif = 'Notification' in window ? Notification.permission : 'unsupported';
   const dayNames = ['L', 'M', 'M', 'J', 'V', 'S', 'D'];
+  const vp = V.prefs;
   dlg.innerHTML = `
     <form method="dialog" data-form="settings">
       <div class="dlg-head"><h2>Réglages</h2><button class="btn ghost icon sm" value="cancel" aria-label="Fermer">${icon('x')}</button></div>
@@ -802,6 +971,18 @@ function openSettings(section) {
           <div class="help">Les serveurs que tu as déjà ajoutés à Claude Code avec <code>claude mcp add --scope user</code> sont aussi disponibles.</div></div>
         <div class="field"><label for="f-amodel">Modèle de l'assistant</label><input id="f-amodel" type="text" name="amodel" value="${esc(c.assistant?.model || '')}" placeholder="par défaut" style="width:180px"><div class="help"></div></div>
 
+        <h3 style="margin:22px 0 0" id="voice">Voix</h3>
+        ${SR ? '' : '<p class="muted">La reconnaissance vocale n\'est pas disponible dans ce navigateur : ouvre Maestro dans Chrome ou Safari pour parler au micro.</p>'}
+        <div class="field"><label for="v-replies">Répondre à voix haute</label><input id="v-replies" class="switch" type="checkbox" name="v-replies" ${vp.replies ? 'checked' : ''}><div class="help">Quand tu parles au micro, la réponse est lue à voix haute.</div></div>
+        <div class="field"><label for="v-all">Lire toutes les réponses</label><input id="v-all" class="switch" type="checkbox" name="v-all" ${vp.all ? 'checked' : ''}><div class="help">Même celles écrites au clavier et celles des routines.</div></div>
+        <div class="field"><label for="v-loop">Conversation continue</label><input id="v-loop" class="switch" type="checkbox" name="v-loop" ${vp.loop ? 'checked' : ''}><div class="help">Le micro se rouvre après chaque réponse parlée. Clique sur le réacteur ou appuie sur Échap pour arrêter.</div></div>
+        <div class="field"><label for="v-announce">Annonces vocales</label><input id="v-announce" class="switch" type="checkbox" name="v-announce" ${vp.announce ? 'checked' : ''}><div class="help">Annonce à voix haute quand une étape attend ta réponse, ta validation, ou échoue.</div></div>
+        <div class="field"><label for="v-voice">Voix</label>
+          <select id="v-voice" name="v-voice"><option value="">Automatique</option>${frVoices().map((v) => `<option value="${esc(v.name)}" ${v.name === vp.voice ? 'selected' : ''}>${esc(v.name)} (${esc(v.lang)})</option>`).join('')}</select>
+          <div class="help">Pour une voix plus naturelle sur Mac : Réglages Système › Accessibilité › Contenu énoncé › Voix du système › Gérer les voix, puis télécharge « Thomas (amélioré) ».</div></div>
+        <div class="field"><label for="v-rate">Vitesse</label><input id="v-rate" type="range" name="v-rate" min="0.8" max="1.4" step="0.05" value="${vp.rate}"><div class="help"></div></div>
+        <div class="field"><span></span><button class="btn sm" type="button" data-action="voice-test">${icon('mic')}Tester la voix</button></div>
+
         <h3 style="margin:22px 0 0">Affichage</h3>
         <div class="field"><label for="f-theme">Thème</label><select id="f-theme" name="theme"><option value="system" ${theme === 'system' ? 'selected' : ''}>Comme macOS</option><option value="dark" ${theme === 'dark' ? 'selected' : ''}>Sombre</option><option value="light" ${theme === 'light' ? 'selected' : ''}>Clair</option></select><div class="help"></div></div>
         <div class="field"><label for="f-open">Ouvrir Maestro</label><select id="f-open" name="openAs"><option value="app" ${c.openAs !== 'browser' ? 'selected' : ''}>Dans une fenêtre d'app</option><option value="browser" ${c.openAs === 'browser' ? 'selected' : ''}>Dans un onglet</option></select><div class="help">Tu peux aussi l'installer depuis Chrome : menu ⋮ › Caster, enregistrer et partager › Installer la page en tant qu'appli.</div></div>
@@ -823,6 +1004,8 @@ async function saveSettings(form) {
   }
   const theme = f.get('theme');
   try { localStorage.setItem('maestro.theme', theme); } catch {}
+  V.prefs = { ...V.prefs, ...voiceForm(f) };
+  saveVoicePrefs();
   applyTheme();
   const r = await act('PUT', '/api/config', {
     maxParallel: Number(f.get('maxParallel')),
@@ -878,6 +1061,7 @@ function onNotify(n) {
   if (n.kind === 'assistant' && visible && R.view === 'assistant') return;
   if (visible) toast(n);
   else systemNotify(n);
+  if (V.prefs.announce && ['question', 'permission', 'review', 'error', 'conflict'].includes(n.kind) && V.state === 'idle') speak(`${n.title}. ${n.body || ''}`);
 }
 
 function sendPresence() {
@@ -927,6 +1111,11 @@ function connect() {
   es.addEventListener('assistant-message', (e) => {
     const m = JSON.parse(e.data);
     S.assistant.messages = [...(S.assistant.messages || []), m];
+    if (m.role === 'assistant') {
+      const mine = V.awaiting && m.voice;
+      if (mine) V.awaiting = false;
+      if ((mine && V.prefs.replies) || V.prefs.all) { V.loopNext = mine; speak(m.text); }
+    }
     render();
   });
   es.addEventListener('assistant-status', (e) => { Object.assign(S.assistant, JSON.parse(e.data)); render(); });
@@ -997,7 +1186,17 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'suggest': sendAssistant(t.dataset.text); break;
-    case 'assistant-stop': act('POST', '/api/assistant/stop'); break;
+    case 'assistant-stop': stopVoice(); act('POST', '/api/assistant/stop'); break;
+    case 'voice': if (R.view !== 'assistant' && V.state !== 'listening') go('/assistant'); listen(); break;
+    case 'core':
+      if (V.state === 'speaking') stopVoice();
+      else { if (R.view !== 'assistant' && V.state !== 'listening') go('/assistant'); listen(); }
+      break;
+    case 'voice-test': {
+      const f = voiceForm(new FormData(t.closest('form')));
+      speak('Systèmes en ligne. Tous les agents sont prêts, je t\'écoute.', f);
+      break;
+    }
     case 'assistant-reset': if (confirm('Commencer une nouvelle conversation ? La mémoire durable de l\'assistant est conservée.')) act('POST', '/api/assistant/reset'); break;
     case 'settings': openSettings(t.dataset.section); break;
     case 'settings-save': e.preventDefault(); if (await saveSettings(t.closest('form'))) $('#settings').close(); break;
@@ -1064,13 +1263,20 @@ document.addEventListener('keydown', (e) => {
     e.preventDefault();
     e.target.closest('form').requestSubmit();
   }
+  if (e.code === 'KeyM' && e.altKey && !e.metaKey && !e.ctrlKey) {
+    e.preventDefault();
+    if (R.view !== 'assistant' && V.state !== 'listening') go('/assistant');
+    listen();
+    return;
+  }
+  if (e.key === 'Escape' && V.state !== 'idle') { stopVoice(); return; }
   if (e.key === 'Escape' && R.sid && !$('#settings').open) go(`/p/${R.pid}`);
 });
 
-function sendAssistant(text) {
+function sendAssistant(text, { voice = false } = {}) {
   if (!S.assistant.busy) S.assistant.busy = true;
   render();
-  act('POST', '/api/assistant', { text });
+  act('POST', '/api/assistant', voice ? { text, voice: true } : { text });
 }
 
 // Rafraîchit les durées affichées.
