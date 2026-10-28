@@ -245,6 +245,12 @@ await test('newsletters : lues depuis le résultat des routines claude.ai, sans 
   assert.ok(isReadOnlyCall('RemoteTrigger', { action: 'get_run_log', session_id: 's' }));
   assert.ok(!isReadOnlyCall('RemoteTrigger', { action: 'update', trigger_id: 't' }));
 });
+await test("l'assistant s'appelle Chlamyd.I.A.", async () => {
+  const { assistant } = await import('../src/assistant.js');
+  const sys = assistant.systemAppend();
+  assert.match(sys, /Tu t'appelles Chlamyd\.I\.A\./);
+  assert.doesNotMatch(sys.replace(/jamais « Maestro »/, ''), /Maestro/);
+});
 await test("l'assistant répond sur tes skills", async () => {
   const { assistant } = await import('../src/assistant.js');
   const before = assistant.data.messages.length;

@@ -1,6 +1,6 @@
 {
-  "name": "Maestro",
-  "short_name": "Maestro",
+  "name": "Chlamyd.I.A.",
+  "short_name": "Chlamyd.I.A.",
   "description": "Pilote tes agents Claude Code depuis un PLAN.md.",
   "start_url": "/#/",
   "scope": "/",

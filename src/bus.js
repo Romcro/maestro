@@ -36,16 +36,16 @@ function nativeNotify({ title, body, url, group }) {
   if (process.platform === 'darwin') {
     const tn = findTerminalNotifier();
     if (tn) {
-      const args = ['-title', 'Maestro', '-subtitle', title, '-message', body || ' ', '-group', group || 'maestro'];
+      const args = ['-title', 'Chlamyd.I.A.', '-subtitle', title, '-message', body || ' ', '-group', group || 'maestro'];
       if (url) args.push('-open', url);
       if (sound) args.push('-sound', 'Glass');
       execFile(tn, args, () => {});
     } else {
-      const script = `display notification "${esc(body || '')}" with title "Maestro" subtitle "${esc(title)}"${sound ? ' sound name "Glass"' : ''}`;
+      const script = `display notification "${esc(body || '')}" with title "Chlamyd.I.A." subtitle "${esc(title)}"${sound ? ' sound name "Glass"' : ''}`;
       execFile('osascript', ['-e', script], () => {});
     }
   } else if (process.platform === 'linux') {
-    execFile('notify-send', ['Maestro — ' + title, body || ''], () => {});
+    execFile('notify-send', ['Chlamyd.I.A. — ' + title, body || ''], () => {});
   }
 }
 
