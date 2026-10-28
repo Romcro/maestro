@@ -9,6 +9,7 @@ import { broadcast, notify } from './bus.js';
 import { getConfig, updateConfig } from './config.js';
 import { manager } from './manager.js';
 import { listSkills, listScheduledTasks, readSkillContent, isReadOnlyCall } from './claude-account.js';
+import { listClaudeProjects, readClaudeProject, searchClaudeProjects, getClaudeRoutines } from './claude-sync.js';
 import { paths, readJSON, writeJSON, ensureDir } from './paths.js';
 
 const HISTORY = path.join(paths.assistantDir, 'history.json');
@@ -98,7 +99,7 @@ class Assistant {
           resume: this.data.sessionId || undefined,
           model: cfg.assistant?.model || cfg.model || undefined,
           permissionMode: 'acceptEdits',
-          allowedTools: ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TodoWrite', 'Skill', 'Bash(date:*)', 'Bash(cal:*)', 'mcp__maestro__projects_status', 'mcp__maestro__project_control', 'mcp__maestro__routines', 'mcp__maestro__claude_account'],
+          allowedTools: ['Read', 'Glob', 'Grep', 'WebSearch', 'WebFetch', 'TodoWrite', 'Skill', 'Bash(date:*)', 'Bash(cal:*)', 'mcp__maestro__projects_status', 'mcp__maestro__project_control', 'mcp__maestro__routines', 'mcp__maestro__claude_account', 'mcp__maestro__claude_projects'],
           systemAppend: this.systemAppend(),
           mcpServers: cfg.assistant?.mcpServers || {},
           settingSources: ['user'],
@@ -154,6 +155,7 @@ class Assistant {
       "",
       "## Son compte Claude",
       "Tu tournes dans Claude Code connecté à son compte Claude : tu as ses skills, ses connecteurs claude.ai (Gmail, Agenda… : outils mcp__claude_ai_*) et ses routines claude.ai.",
+      "- Ses projets claude.ai (instructions et documents qu'il a importés dans Chlamyd.I.A.) : outil claude_projects (list, read avec name et éventuellement doc, search avec query). Quand il parle d'un de ses projets Claude, appuie-toi dessus et suis ses instructions. S'il n'y en a aucun, explique-lui qu'il peut les importer depuis la page Compte Claude.",
       "- Ses skills : outil claude_account (action skills pour la liste, skill + name pour le détail). Tu peux aussi en utiliser un avec l'outil Skill.",
       "- Ses routines et tâches planifiées : outil RemoteTrigger action list (routines claude.ai, dans le cloud), outil claude_account action scheduled (tâches de l'app Claude sur ce Mac et routines Chlamyd.I.A.). Donne pour chacune son nom, quand elle tourne et ce qu'elle fait, en clair (traduis les expressions cron en heures et jours). Ne crée, modifie ni lance une routine claude.ai sans son accord explicite.",
       "- Ses newsletters : il les génère lui-même avec ses routines claude.ai. Pour lui en lire une : RemoteTrigger action list, repère la ou les routines qui produisent une newsletter (nom ou consigne : newsletter, veille, digest, revue, brief…), puis action list_runs avec son trigger_id, prends l'exécution terminée la plus récente et récupère son contenu avec action get_run_log (session_id de l'exécution ; suis next_cursor jusqu'à la fin). La newsletter est le texte final rédigé par la routine : lis-la telle quelle, en entier, sauf s'il demande un résumé. Si la consigne de la routine dit qu'elle publie ailleurs (mail, Notion, document, fichier), va la lire à cet endroit avec l'outil correspondant. S'il a plusieurs routines de ce type, demande laquelle, ou lis la plus récente s'il dit « ma newsletter ». Note dans ta mémoire quelles routines sont ses newsletters pour ne pas chercher la prochaine fois.",
@@ -198,6 +200,24 @@ class Assistant {
         },
       },
       {
+        name: 'claude_projects',
+        description:
+          "Ses projets claude.ai importés dans Chlamyd.I.A. : action list (noms, descriptions, documents), read (instructions d'un projet par name, ou contenu d'un document avec doc), search (cherche query dans tous les documents).",
+        schema: { action: z.enum(['list', 'read', 'search']), name: z.string().optional(), doc: z.string().optional(), query: z.string().optional() },
+        handler: async ({ action, name, doc, query }) => {
+          if (action === 'list') {
+            const list = listClaudeProjects();
+            return list.length ? JSON.stringify(list.map((p) => ({ nom: p.name, description: p.description, documents: p.docs })), null, 1) : "Aucun projet claude.ai importé. Il peut les importer depuis la page Compte Claude de Chlamyd.I.A. (export de ses données claude.ai).";
+          }
+          if (action === 'search') return JSON.stringify(searchClaudeProjects(query), null, 1);
+          const r = readClaudeProject(name, doc);
+          if (!r) return `Aucun projet nommé « ${name} ».`;
+          if (r.missing) return `Pas de document « ${r.missing} » dans ${r.project.name}. Documents : ${r.project.docs.join(', ')}`;
+          if (r.doc) return `# ${r.project.name} · ${r.doc}\n${r.content}`;
+          return `# ${r.project.name}\n${r.project.description}\n\n## Instructions\n${r.project.instructions || '(aucune)'}\n\n## Documents\n${r.project.docs.join('\n') || '(aucun)'}`;
+        },
+      },
+      {
         name: 'claude_account',
         description:
           "Ton compte Claude sur ce Mac, en lecture : action skills (liste des skills perso et des plugins), skill (contenu d'un skill ou d'une tâche planifiée, par name), scheduled (tâches planifiées de l'app Claude sur ce Mac et routines Maestro). Pour les routines claude.ai dans le cloud, utilise RemoteTrigger action list.",
@@ -215,7 +235,10 @@ class Assistant {
             {
               tâches_app_claude: listScheduledTasks().map(({ name: n, description, schedule }) => ({ nom: n, description, planification: schedule })),
               routines_maestro: (getConfig().routines || []).map((r) => ({ nom: r.name, heure: r.time, jours: r.days, consigne: r.prompt, active: r.enabled })),
-              routines_claude_ai: 'Utilise RemoteTrigger action list pour les obtenir.',
+              routines_claude_ai: (() => {
+                const c = getClaudeRoutines();
+                return c.routines.length ? { dernière_lecture: c.fetchedAt, liste: c.routines.map((r) => ({ nom: r.name, quand: r.schedule_fr || r.cron, consigne: r.prompt, id: r.id })), note: 'Pour la liste à jour ou les résultats, utilise RemoteTrigger.' } : 'Utilise RemoteTrigger action list pour les obtenir.';
+              })(),
             },
             null,
             1,

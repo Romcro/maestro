@@ -6,6 +6,7 @@ import { manager } from './manager.js';
 import { inbox } from './inbox.js';
 import { assistant } from './assistant.js';
 import { claudeDir, listSkills, listScheduledTasks } from './claude-account.js';
+import { importClaudeExport, fetchClaudeRoutines, copyRoutineLocally, accountSnapshot } from './claude-sync.js';
 import { bus, broadcast, setPresence, notify } from './bus.js';
 import { getConfig, updateConfig, findClaude } from './config.js';
 import { HOST, PORT, PUBLIC_DIR, paths, ensureDir, ROOT } from './paths.js';
@@ -100,10 +101,10 @@ function serveFile(res, full) {
 
 // -------------------------------------------------------------------- routes API
 const routes = [];
-const route = (method, pattern, handler) => {
+const route = (method, pattern, handler, { raw = false } = {}) => {
   const keys = [];
   const re = new RegExp(`^${pattern.replace(/:(\w+)/g, (_, k) => (keys.push(k), '([^/]+)'))}$`);
-  routes.push({ method, re, keys, handler });
+  routes.push({ method, re, keys, handler, raw });
 };
 const fire = (p) => Promise.resolve(p).catch((e) => console.error(e));
 
@@ -179,6 +180,26 @@ route('POST', '/api/assistant', ({ body }) => {
 route('POST', '/api/assistant/stop', () => (assistant.stop(), { ok: true }));
 route('POST', '/api/assistant/reset', () => (assistant.reset(), { ok: true }));
 route('GET', '/api/claude-account', () => ({ dir: claudeDir(), skills: listSkills(), scheduled: listScheduledTasks() }));
+route('GET', '/api/claude', () => ({ dir: claudeDir(), skills: listSkills(), scheduled: listScheduledTasks(), ...accountSnapshot() }));
+route('POST', '/api/claude/routines/fetch', () => (fire(fetchClaudeRoutines()), { ok: true }));
+route('POST', '/api/claude/routines/:id/copy', ({ params }) => copyRoutineLocally(decodeURIComponent(params.id)));
+// Export claude.ai envoyé tel quel par le navigateur (zip ou projects.json) : écrit dans un fichier temporaire puis importé.
+route('POST', '/api/claude/import', async ({ req }) => {
+  const ext = /json/.test(req.headers['content-type'] || '') ? '.json' : '.zip';
+  const tmp = path.join(ensureDir(paths.claudeData), `import-${Date.now()}${ext}`);
+  try {
+    await new Promise((resolve, reject) => {
+      const out = fs.createWriteStream(tmp);
+      req.pipe(out);
+      out.on('finish', resolve);
+      out.on('error', reject);
+      req.on('error', reject);
+    });
+    return importClaudeExport(tmp);
+  } finally {
+    fs.rmSync(tmp, { force: true });
+  }
+}, { raw: true });
 route('POST', '/api/routines/:id/run', ({ params }) => (assistant.runRoutineNow(params.id), { ok: true }));
 
 route('GET', '/api/config', () => getConfig());
@@ -251,7 +272,7 @@ export async function startServer() {
       if (!m) continue;
       const params = Object.fromEntries(r.keys.map((k, i) => [k, m[i + 1]]));
       try {
-        const body = req.method === 'GET' ? {} : await readBody(req);
+        const body = req.method === 'GET' || r.raw ? {} : await readBody(req);
         const out = await r.handler({ params, body, query: url.searchParams, req });
         return send(res, 200, out ?? { ok: true });
       } catch (e) {

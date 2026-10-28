@@ -311,6 +311,17 @@ async function fakeRun(o, tools, emit) {
       emit({ type: 'text', text });
       return { sessionId, ok: true, text, cost: 0.003, turns: 2 };
     }
+    if (toolByName.save_routines) {
+      emit({ type: 'tool', icon: 'clock', name: 'RemoteTrigger', label: 'Liste tes routines claude.ai' });
+      await wait(300);
+      await toolByName.save_routines.handler({
+        routines: [
+          { id: 'trig_veille', name: 'Newsletter IA', enabled: true, cron: '0 6 * * 1-5', schedule_fr: 'Du lundi au vendredi à 8 h', time_local: '08:00', days: [1, 2, 3, 4, 5], prompt: 'Rédige ma newsletter IA du jour.', last_run: null },
+          { id: 'trig_heure', name: 'Veille horaire', enabled: true, cron: '0 * * * *', schedule_fr: 'Toutes les heures', time_local: null, days: null, prompt: 'Surveille les nouveautés.' },
+        ],
+      });
+      return { sessionId, ok: true, text: 'Fait.', cost: 0.001, turns: 2 };
+    }
     if (toolByName.write_plan) {
       emit({ type: 'tool', icon: 'search', name: 'Glob', label: 'Cherche **/*' });
       await wait(800);

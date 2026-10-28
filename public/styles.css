@@ -563,6 +563,9 @@ dialog::backdrop { background: rgba(6, 9, 22, 0.6); backdrop-filter: blur(3px); 
 .routine { display: grid; grid-template-columns: auto 1fr auto; gap: 4px 12px; padding: 10px 0; border-bottom: 1px dashed var(--line); align-items: center; }
 .routine .when { font-stretch: 80%; font-weight: 650; font-size: 18px; }
 .routine .what { color: var(--ink-2); font-size: 13.5px; }
+.routine.item { grid-template-columns: 1fr auto; }
+.routine.item:last-of-type { border-bottom: 0; }
+@media (max-width: 640px) { .routine.item { grid-template-columns: 1fr; } }
 .days { display: flex; gap: 4px; }
 .days label { display: grid; place-items: center; width: 30px; height: 28px; border: 1px solid var(--line-2); border-radius: 7px; cursor: pointer; font-size: 12.5px; }
 .days input { display: none; }

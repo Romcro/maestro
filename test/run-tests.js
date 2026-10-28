@@ -259,6 +259,55 @@ await test("l'assistant répond sur tes skills", async () => {
   assert.match(assistant.data.messages.at(-1).text, /2 skills : outils:pdf, veille/);
 });
 
+console.log('Projets et routines claude.ai');
+await test("importe les projets d'un export claude.ai (zip) et les lit", async () => {
+  const { importClaudeExport, listClaudeProjects, readClaudeProject, searchClaudeProjects } = await import('../src/claude-sync.js');
+  const exp = path.join(tmp, 'export', 'data-2026');
+  fs.mkdirSync(exp, { recursive: true });
+  fs.writeFileSync(path.join(exp, 'conversations.json'), '[]');
+  fs.writeFileSync(path.join(exp, 'projects.json'), JSON.stringify([
+    { uuid: 'u1', name: 'Agence Créa', description: 'Mes clients', prompt_template: 'Réponds comme un DA.', docs: [{ filename: 'charte.md', content: 'Couleur principale : bleu nuit.' }, { filename: '../evil.md', content: 'x' }] },
+    { uuid: 'u2', name: 'Exemple', is_starter_project: true, docs: [] },
+  ]));
+  const zip = path.join(tmp, 'export.zip');
+  execFileSync('zip', ['-qr', zip, 'data-2026'], { cwd: path.join(tmp, 'export') });
+  const r = importClaudeExport(zip);
+  assert.equal(r.projects, 1);
+  assert.equal(r.docs, 2);
+  const [p] = listClaudeProjects();
+  assert.equal(p.name, 'Agence Créa');
+  assert.equal(p.instructions, 'Réponds comme un DA.');
+  assert.deepEqual(p.docs.sort(), ['charte.md', 'evil.md']);
+  assert.ok(!fs.existsSync(path.join(process.env.MAESTRO_HOME, 'claude', 'projects', 'evil.md')), 'pas de sortie du dossier');
+  assert.match(readClaudeProject('agence', 'charte').content, /bleu nuit/);
+  assert.equal(searchClaudeProjects('couleur bleu')[0].document, 'charte.md');
+  assert.equal(importClaudeExport(path.join(tmp, 'export')).projects, 1, 'réimport depuis le dossier, sans doublon');
+  assert.equal(listClaudeProjects().length, 1);
+  assert.throws(() => importClaudeExport(path.join(tmp, 'nulle-part.zip')), /introuvable/);
+});
+await test('récupère les routines claude.ai et en copie une ici', async () => {
+  const { fetchClaudeRoutines, getClaudeRoutines, copyRoutineLocally } = await import('../src/claude-sync.js');
+  const { getConfig } = await import('../src/config.js');
+  await fetchClaudeRoutines();
+  const rt = getClaudeRoutines();
+  assert.ok(rt.fetchedAt);
+  assert.deepEqual(rt.routines.map((r) => r.name), ['Newsletter IA', 'Veille horaire']);
+  const local = copyRoutineLocally('trig_veille');
+  assert.equal(local.time, '08:00');
+  assert.deepEqual(local.days, [1, 2, 3, 4, 5]);
+  assert.ok(getConfig().routines.some((r) => r.claudeId === 'trig_veille'));
+  assert.throws(() => copyRoutineLocally('trig_veille'), /déjà copiée/);
+  assert.throws(() => copyRoutineLocally('trig_heure'), /heure fixe/);
+});
+await test("l'assistant lit les projets claude.ai importés", async () => {
+  const { assistant } = await import('../src/assistant.js');
+  const tool = assistant.tools().find((t) => t.name === 'claude_projects');
+  assert.match(await tool.handler({ action: 'list' }), /Agence Créa/);
+  assert.match(await tool.handler({ action: 'read', name: 'Agence Créa' }), /Réponds comme un DA/);
+  assert.match(await tool.handler({ action: 'read', name: 'Agence Créa', doc: 'charte.md' }), /bleu nuit/);
+  assert.match(assistant.systemAppend(), /claude_projects/);
+});
+
 console.log(`\n${passed} test(s) réussi(s)${process.exitCode ? ', des échecs' : ''}.`);
 for (const pr of manager.projects.values()) pr.dispose();
 fs.rmSync(tmp, { recursive: true, force: true });
