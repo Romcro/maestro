@@ -234,6 +234,17 @@ await test("lecture sans autorisation, écriture via la boîte « À traiter »"
   inbox.resolve(item.id, { choice: 'deny' });
   assert.equal((await pending).behavior, 'deny');
 });
+await test('newsletters : lues depuis le résultat des routines claude.ai, sans autorisation', async () => {
+  const { assistant } = await import('../src/assistant.js');
+  const { isReadOnlyCall } = await import('../src/claude-account.js');
+  const sys = assistant.systemAppend();
+  assert.match(sys, /newsletters : il les génère lui-même avec ses routines claude\.ai/);
+  assert.match(sys, /list_runs/);
+  assert.match(sys, /get_run_log/);
+  assert.ok(isReadOnlyCall('RemoteTrigger', { action: 'list_runs', trigger_id: 't' }));
+  assert.ok(isReadOnlyCall('RemoteTrigger', { action: 'get_run_log', session_id: 's' }));
+  assert.ok(!isReadOnlyCall('RemoteTrigger', { action: 'update', trigger_id: 't' }));
+});
 await test("l'assistant répond sur tes skills", async () => {
   const { assistant } = await import('../src/assistant.js');
   const before = assistant.data.messages.length;
