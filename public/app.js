@@ -171,6 +171,7 @@ function parseRoute() {
   if ((m = h.match(/^\/p\/([^/]+)/))) return { view: 'project', pid: m[1], sid: null };
   if (h.startsWith('/inbox')) return { view: 'inbox' };
   if (h.startsWith('/assistant')) return { view: 'assistant' };
+  if (h.startsWith('/claude')) return { view: 'claude' };
   return { view: 'home' };
 }
 let R = parseRoute();
@@ -253,6 +254,7 @@ function renderNow() {
   if (R.view === 'project') main = project ? renderProject(project) : renderMissing();
   else if (R.view === 'inbox') main = renderInboxPage();
   else if (R.view === 'assistant') main = renderAssistant();
+  else if (R.view === 'claude') main = renderClaudePage();
   else main = renderHome();
   patch($('#shell-main'), main);
   if (step) patch($('#shell-detail'), renderDetail(project, step));
@@ -276,6 +278,7 @@ function renderSide() {
     <nav class="nav" aria-label="Navigation">
       <a class="nav-item" href="#/inbox"${cur('inbox')}>${icon('inbox')}<span>À traiter</span>${n ? `<span class="count">${n}</span>` : ''}</a>
       <a class="nav-item" href="#/assistant"${cur('assistant')}>${icon('chat')}<span>Assistant</span>${S.assistant.busy ? '<span class="dot on" style="margin-left:auto"></span>' : ''}</a>
+      <a class="nav-item" href="#/claude"${cur('claude')}>${icon('plug')}<span>Compte Claude</span>${S.account?.fetching ? '<span class="dot on" style="margin-left:auto"></span>' : ''}</a>
       <button class="nav-item" data-action="voice" title="Raccourci : ⌥ M">${icon('mic')}<span>${V.state === 'listening' ? 'J\'écoute…' : 'Parler à Chlamyd.I.A.'}</span></button>
     </nav>
     <div class="nav-heading">Projets</div>
@@ -755,6 +758,89 @@ function renderAssistant() {
   </div>`;
 }
 
+// ------------------------------------------------------------------ compte Claude
+// Projets (importés depuis l'export claude.ai), routines claude.ai (lues par Claude Code) et skills de ce Mac.
+let accountLoading = false;
+async function loadAccount() {
+  if (accountLoading) return;
+  accountLoading = true;
+  try { S.account = await api('GET', '/api/claude'); } catch (e) { S.account = { error: e.message }; }
+  accountLoading = false;
+  render();
+}
+function renderClaudePage() {
+  const a = S.account;
+  if (!a) { loadAccount(); return '<div class="page"><h1>Compte Claude</h1><p class="lead">Chargement…</p></div>'; }
+  const rt = a.routines || { routines: [] };
+  const when = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : '');
+  const copied = new Set((S.config?.routines || []).map((r) => r.claudeId).filter(Boolean));
+  const row = (title, sub, actions) => `<div class="routine item"><div style="min-width:0"><div>${title}</div>${sub ? `<div class="what">${sub}</div>` : ''}</div><div class="btn-row">${actions}</div></div>`;
+  return `<div class="page">
+    <div class="btn-row" style="justify-content:space-between"><h1>Compte Claude</h1><button class="btn back icon" data-action="nav" aria-label="Menu">${icon('menu')}</button></div>
+    <p class="lead">Tes projets, routines et skills Claude, utilisables ici et à la voix. Tout reste sur ton Mac.</p>
+
+    <h3 style="margin:8px 0 8px">Routines claude.ai</h3>
+    <div class="panel">
+      <div class="btn-row" style="justify-content:space-between">
+        <span class="muted">${a.fetching ? 'Lecture de tes routines par Claude Code…' : rt.fetchedAt ? `Lues le ${when(rt.fetchedAt)}` : 'Pas encore récupérées.'}</span>
+        <button class="btn sm" data-action="claude-fetch" ${a.fetching ? 'disabled' : ''}>${icon('refresh')}${rt.fetchedAt ? 'Actualiser' : 'Récupérer mes routines'}</button>
+      </div>
+      ${rt.error ? `<p class="muted" style="margin:0">⚠️ ${esc(rt.error)} Vérifie que Claude Code est connecté à ton compte : tape <code>claude</code> puis <code>/login</code> dans le Terminal.</p>` : ''}
+      ${(rt.routines || []).map((r) => row(
+        `${esc(r.name)}${r.enabled === false ? ' <span class="muted">(en pause)</span>' : ''}`,
+        `${esc(r.schedule_fr || r.cron || '')}${r.prompt ? ` · ${esc(r.prompt.slice(0, 120))}` : ''}`,
+        `<button class="btn ghost sm" data-action="claude-routine-read" data-name="${esc(r.name)}" data-id="${esc(r.id)}">Lire le dernier résultat</button>
+         ${copied.has(r.id) ? '<span class="chip s-done">Copiée</span>' : r.time_local ? `<button class="btn ghost sm" data-action="claude-copy" data-id="${esc(r.id)}" title="La faire tourner aussi dans Chlamyd.I.A., à ${esc(r.time_local)}">Copier ici</button>` : ''}`,
+      )).join('') || (rt.fetchedAt && !rt.error ? '<p class="muted" style="margin:0">Aucune routine sur ton compte.</p>' : '')}
+    </div>
+
+    <h3 style="margin:24px 0 8px">Projets claude.ai</h3>
+    <div class="panel">
+      ${(a.projects || []).map((p) => row(
+        esc(p.name),
+        `${p.description ? `${esc(p.description.slice(0, 120))} · ` : ''}${p.docs.length} document${p.docs.length > 1 ? 's' : ''}${p.instructions ? ' · instructions' : ''}`,
+        `<button class="btn ghost sm" data-action="claude-project" data-name="${esc(p.name)}">${icon('chat')}Discuter</button>`,
+      )).join('') || '<p class="muted" style="margin:0">Aucun projet importé pour l\'instant.</p>'}
+      <details${a.projects?.length ? '' : ' open'}><summary>${a.projects?.length ? 'Mettre à jour mes projets' : 'Importer mes projets'}</summary>
+        <ol class="muted" style="margin:8px 0;padding-left:20px;display:grid;gap:4px">
+          <li>Sur claude.ai : Paramètres › Confidentialité › <b>Exporter les données</b>.</li>
+          <li>Tu reçois un mail avec un lien : télécharge le fichier <code>.zip</code>.</li>
+          <li>Choisis ce fichier ici. Seuls tes projets (instructions et documents) sont gardés.</li>
+        </ol>
+        <label class="btn sm" style="cursor:pointer">${icon('folder')}Choisir le fichier d'export<input type="file" accept=".zip,.json" data-import="claude" hidden></label>
+      </details>
+    </div>
+
+    <h3 style="margin:24px 0 8px">Skills</h3>
+    <div class="panel">
+      ${(a.skills || []).map((k) => row(esc(k.name), esc((k.description || '').slice(0, 140)), `<button class="btn ghost sm" data-action="claude-skill" data-name="${esc(k.name)}">Utiliser</button>`)).join('') || `<p class="muted" style="margin:0">Aucun skill dans <code>${esc(a.dir || '~/.claude')}</code>.</p>`}
+      ${(a.scheduled || []).length ? `<p class="muted" style="margin:0">Tâches planifiées de l'app Claude : ${a.scheduled.map((t) => esc(t.name)).join(', ')}</p>` : ''}
+    </div>
+  </div>`;
+}
+function toAssistant(text, send = false) {
+  if (send) { go('/assistant'); sendAssistant(text); return; }
+  drafts.assistant = text;
+  go('/assistant');
+  requestAnimationFrame(() => { const ta = $('.chat-input textarea'); if (ta) { ta.value = text; ta.focus(); ta.setSelectionRange(text.length, text.length); autosize(ta); } });
+}
+document.addEventListener('change', async (e) => {
+  const input = e.target.closest?.('input[data-import="claude"]');
+  if (!input?.files?.[0]) return;
+  const file = input.files[0];
+  toast({ title: 'Import en cours…', body: file.name });
+  try {
+    const res = await fetch('/api/claude/import', { method: 'POST', headers: { 'X-Maestro-Token': TOKEN, 'Content-Type': /\.json$/i.test(file.name) ? 'application/json' : 'application/zip' }, body: file });
+    const r = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(r.error || `Erreur ${res.status}`);
+    toast({ title: `${r.projects} projet${r.projects > 1 ? 's' : ''} importé${r.projects > 1 ? 's' : ''}`, body: `${r.docs} document${r.docs > 1 ? 's' : ''}`, kind: 'success' });
+    loadAccount();
+  } catch (err) {
+    toast({ title: 'Import impossible', body: err.message, kind: 'error' });
+  }
+  input.value = '';
+});
+
 // ------------------------------------------------------------------ voix
 // Web Speech API du navigateur : reconnaissance (Chrome, Safari) et synthèse vocale, sans clé ni serveur.
 const SR = window.SpeechRecognition || window.webkitSpeechRecognition || null;
@@ -1194,6 +1280,7 @@ function connect() {
   });
   es.addEventListener('assistant-status', (e) => { Object.assign(S.assistant, JSON.parse(e.data)); render(); });
   es.addEventListener('assistant-reset', (e) => { S.assistant = JSON.parse(e.data); render(); });
+  es.addEventListener('claude-sync', (e) => { S.account = { ...(S.account || {}), ...JSON.parse(e.data) }; render(); });
   es.addEventListener('config', (e) => { S.config = JSON.parse(e.data); S.assistant.routines = S.config.routines; render(); });
   es.addEventListener('notify', (e) => onNotify(JSON.parse(e.data)));
   es.onerror = () => {
@@ -1260,6 +1347,11 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'suggest': sendAssistant(t.dataset.text); break;
+    case 'claude-fetch': if (S.account) S.account.fetching = true; render(); act('POST', '/api/claude/routines/fetch'); break;
+    case 'claude-copy': if (await act('POST', `/api/claude/routines/${encodeURIComponent(t.dataset.id)}/copy`, null, 'Routine copiée dans Chlamyd.I.A.')) render(); break;
+    case 'claude-routine-read': toAssistant(`Lis-moi le dernier résultat de ma routine claude.ai « ${t.dataset.name} » (${t.dataset.id}).`, true); break;
+    case 'claude-skill': toAssistant(`Utilise mon skill « ${t.dataset.name} » pour `); break;
+    case 'claude-project': toAssistant(`Dans mon projet Claude « ${t.dataset.name} », `); break;
     case 'assistant-stop': stopVoice(); act('POST', '/api/assistant/stop'); break;
     case 'voice': if (R.view !== 'assistant' && V.state !== 'listening') go('/assistant'); listen(); break;
     case 'core':

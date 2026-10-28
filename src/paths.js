@@ -18,6 +18,7 @@ export const paths = {
   projectDir: (id) => path.join(HOME, 'projects', id),
   worktrees: (id) => path.join(HOME, 'worktrees', id),
   assistantDir: path.join(HOME, 'assistant'),
+  claudeData: path.join(HOME, 'claude'), // projets et routines rapatriés de claude.ai
 };
 
 export function ensureDir(dir) {
