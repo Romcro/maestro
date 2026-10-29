@@ -13,6 +13,7 @@ export const paths = {
   config: path.join(HOME, 'config.json'),
   projects: path.join(HOME, 'projects.json'),
   token: path.join(HOME, 'token'),
+  keys: path.join(HOME, 'keys.json'), // clés des services d'IA, lisibles par toi seul
   log: path.join(HOME, 'maestro.log'),
   pid: path.join(HOME, 'maestro.pid'),
   projectDir: (id) => path.join(HOME, 'projects', id),

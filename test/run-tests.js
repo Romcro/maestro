@@ -308,6 +308,44 @@ await test("l'assistant lit les projets claude.ai importés", async () => {
   assert.match(assistant.systemAppend(), /claude_projects/);
 });
 
+console.log('Connexions');
+await test('reconnaît, vérifie et range les clés sans jamais les exposer', async () => {
+  const { detectProvider, connect, publicInfo, getKey, claudeEnv, disconnect, pickModel } = await import('../src/providers.js');
+  assert.equal(detectProvider('sk-ant-api03-abcdefghijklmnopqrstuvwxyz'), 'anthropic');
+  assert.equal(detectProvider('sk-proj-abcdefghijklmnopqrstuvwxyz'), 'openai');
+  assert.equal(detectProvider('AIzaSyAbcdefghijklmnopqrstuvwxyz0123456'), 'google');
+  assert.equal(detectProvider('bonjour'), null);
+  await assert.rejects(() => connect('bonjour'), /reconnais pas/);
+  const info = await connect('  "sk-proj-abcdefghijklmnopqrstuvwxyz1234"  ');
+  assert.equal(info.id, 'openai');
+  assert.equal(info.connected, true);
+  assert.equal(info.hint, '…1234');
+  assert.ok(!JSON.stringify(publicInfo()).includes('abcdefghij'), 'la clé ne sort pas du serveur');
+  assert.equal(getKey('openai'), 'sk-proj-abcdefghijklmnopqrstuvwxyz1234');
+  const mode = fs.statSync(path.join(process.env.MAESTRO_HOME, 'keys.json')).mode & 0o777;
+  assert.equal(mode, 0o600, 'fichier lisible par toi seul');
+  assert.equal(claudeEnv(), undefined, 'sans clé Claude, on garde la connexion Claude Code');
+  await connect('sk-ant-api03-abcdefghijklmnopqrstuvwxyz');
+  assert.equal(claudeEnv().ANTHROPIC_API_KEY, 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz');
+  disconnect('anthropic');
+  assert.equal(claudeEnv(), undefined);
+  assert.equal(pickModel('openai', ['gpt-4o', 'gpt-5-mini', 'gpt-5', 'gpt-4o-audio-preview']), 'gpt-5');
+  assert.equal(pickModel('google', ['gemini-2.0-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite']), 'gemini-2.5-pro');
+});
+await test("l'assistant peut discuter avec ChatGPT à la place de Claude", async () => {
+  const { assistant } = await import('../src/assistant.js');
+  const { updateConfig } = await import('../src/config.js');
+  updateConfig({ assistant: { provider: 'openai' } });
+  const before = assistant.data.messages.length;
+  assistant.send('Bonjour toi');
+  await wait(() => assistant.data.messages.length >= before + 2 && !assistant.busy);
+  const a = assistant.data.messages.at(-1);
+  assert.equal(a.provider, 'openai');
+  assert.match(a.text, /simulation ChatGPT/);
+  assert.match(await assistant.systemOther('openai'), /propulsé ici par ChatGPT/);
+  updateConfig({ assistant: { provider: 'claude' } });
+});
+
 console.log(`\n${passed} test(s) réussi(s)${process.exitCode ? ', des échecs' : ''}.`);
 for (const pr of manager.projects.values()) pr.dispose();
 fs.rmSync(tmp, { recursive: true, force: true });
