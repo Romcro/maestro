@@ -537,6 +537,7 @@ function drawLinks() {
 window.addEventListener('resize', () => requestAnimationFrame(drawLinks));
 
 // ------------------------------------------------------------------ éléments « à traiter »
+const RISK_LABEL = { read: 'Sans risque : regarde seulement, ne change rien', change: 'Modifie des choses sur ton Mac', danger: 'Attention : difficile ou impossible à annuler' };
 function renderAsk(it, { inProject = false } = {}) {
   const p = it.projectId ? S.projects.get(it.projectId) : null;
   const where = inProject ? '' : p
@@ -545,11 +546,16 @@ function renderAsk(it, { inProject = false } = {}) {
   let body = '';
   let actions = '';
   if (it.kind === 'permission') {
-    body = `${it.detail ? `<div class="body">${esc(it.detail)}</div>` : ''}${it.preview ? `<pre>${esc(it.preview)}</pre>` : ''}`;
-    actions = `<div class="btn-row">
-      <button class="btn primary sm" data-action="answer" data-id="${it.id}" data-choice="allow">Autoriser</button>
-      <button class="btn sm" data-action="answer" data-id="${it.id}" data-choice="always">Toujours pour cette session</button>
-      <button class="btn sm danger" data-action="answer" data-id="${it.id}" data-choice="deny">Refuser</button></div>`;
+    const ex = it.explain;
+    const raw = it.tool === 'Bash' ? 'Voir la commande exacte' : it.tool === 'Write' || it.tool === 'local' ? 'Voir le contenu exact' : 'Voir le détail technique';
+    body = `${ex ? `<div class="explain r-${ex.risk}">
+        <div class="explain-head"><span class="risk-dot"></span>${esc(RISK_LABEL[ex.risk] || '')}</div>
+        <div class="explain-title">Ce que ça va faire</div>
+        <ol>${ex.steps.map((x) => `<li>${esc(x)}</li>`).join('')}</ol>
+        ${ex.warnings?.length ? `<ul class="explain-warn">${ex.warnings.map((w) => `<li>${esc(w)}</li>`).join('')}</ul>` : ''}
+      </div>` : ''}${it.detail ? `<div class="body">${esc(it.detail)}</div>` : ''}${it.preview ? (ex ? `<details class="raw"><summary>${raw}</summary><pre>${esc(it.preview)}</pre></details>` : `<pre>${esc(it.preview)}</pre>`) : ''}`;
+    const opts = it.options?.length ? it.options : [{ id: 'allow', label: 'Autoriser' }, { id: 'always', label: 'Toujours (cette session)' }, { id: 'deny', label: 'Refuser' }];
+    actions = `<div class="btn-row">${opts.map((o) => `<button class="btn sm${o.id === 'allow' ? ' primary' : o.id === 'deny' ? ' danger' : ''}" data-action="answer" data-id="${it.id}" data-choice="${esc(o.id)}">${esc(o.id === 'always' ? 'Toujours pour cette session' : o.label)}</button>`).join('')}</div>`;
   } else if (it.kind === 'question') {
     body = `<div class="body" style="color:var(--ink);font-size:15px">${md(it.detail)}</div>`;
     actions = `${it.choices?.length ? `<div class="choices">${it.choices.map((c) => `<button class="btn sm" data-action="answer" data-id="${it.id}" data-text="${esc(c)}">${esc(c)}</button>`).join('')}</div>` : ''}
@@ -728,7 +734,9 @@ async function loadLog(pid, sid) {
 function renderAssistant() {
   const a = S.assistant;
   const msgs = a.messages || [];
-  const suggestions = ['Où en sont mes projets ?', "Qu'est-ce qui m'attend aujourd'hui ?", 'Lis-moi ma dernière newsletter', 'Quelles sont mes routines Claude ?', 'Quels skills j\'ai ?', 'Programme un brief chaque matin à 8 h 30'];
+  const suggestions = S.config?.assistant?.provider === 'ollama'
+    ? ['Crée un fichier courses.md avec une liste pour la semaine', 'Quels fichiers as-tu dans ton dossier ?', 'Résume-moi le fichier notes.md', 'Ajoute « appeler le garage » à la fin de todo.md']
+    : ['Où en sont mes projets ?', "Qu'est-ce qui m'attend aujourd'hui ?", 'Lis-moi ma dernière newsletter', 'Quelles sont mes routines Claude ?', 'Quels skills j\'ai ?', 'Programme un brief chaque matin à 8 h 30'];
   return `<div class="chat">
     <div class="chat-head">
       <div><h1>Assistant</h1><p>Il connaît l'état de tes projets et ton compte Claude : skills, routines, connecteurs (Gmail, agenda…).</p></div>
@@ -1229,6 +1237,7 @@ function openSettings(section) {
           <textarea id="f-mcp" name="mcp" rows="5" style="font-family:var(--mono);font-size:12.5px" placeholder='{ "notion": { "type": "http", "url": "https://mcp.notion.com/mcp" } }'>${esc(JSON.stringify(c.assistant?.mcpServers || {}, null, 2))}</textarea>
           <div class="help">Les serveurs que tu as déjà ajoutés à Claude Code avec <code>claude mcp add --scope user</code> sont aussi disponibles.</div></div>
         <div class="field"><label for="f-reads">Lire sans me demander</label><input id="f-reads" class="switch" type="checkbox" name="autoAllowReads" ${c.assistant?.autoAllowReads !== false ? 'checked' : ''}><div class="help">L'assistant lit tes mails, routines et notes sans te demander à chaque fois. Envoyer, créer, modifier ou supprimer passe toujours par ta boîte « À traiter ».</div></div>
+        <div class="field"><label for="f-lfolder">Dossier du modèle local</label><input id="f-lfolder" type="text" name="localFolder" value="${esc(c.assistant?.localFolder || '')}" placeholder="~/Documents/Chlamyd.I.A." style="width:260px"><div class="help">Le modèle local crée, lit et écrit librement ses fichiers ici. Ailleurs, il te demande d'abord.</div></div>
         <div class="field stack" id="claude-account"><label>Ton compte Claude</label><div class="help" data-claude-account>Chargement…</div></div>
         <div class="field"><label for="f-amodel">Modèle de l'assistant</label><input id="f-amodel" type="text" name="amodel" value="${esc(c.assistant?.model || '')}" placeholder="par défaut" style="width:180px"><div class="help"></div></div>
 
@@ -1290,7 +1299,7 @@ async function saveSettings(form) {
     allow: String(f.get('allow') || '').split('\n').map((s) => s.trim()).filter(Boolean),
     model: String(f.get('model') || '').trim(),
     notifications: { native: f.get('native'), sound: !!f.get('sound') },
-    assistant: { model: String(f.get('amodel') || '').trim(), mcpServers: mcp, autoAllowReads: !!f.get('autoAllowReads') },
+    assistant: { model: String(f.get('amodel') || '').trim(), mcpServers: mcp, autoAllowReads: !!f.get('autoAllowReads'), localFolder: String(f.get('localFolder') || '').trim() },
     openAs: f.get('openAs'),
   }, 'Réglages enregistrés');
   if (r) S.config = r;

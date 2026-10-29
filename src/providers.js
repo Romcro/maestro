@@ -40,9 +40,9 @@ export const PROVIDERS = {
 
 // Modèles locaux conseillés : du plus léger au plus malin. La taille est celle du téléchargement.
 export const LOCAL_MODELS = [
-  { id: 'llama3.2:3b', label: 'Llama 3.2 · 3B', size: '2 Go', note: 'très léger, pour tout Mac' },
-  { id: 'gemma3:4b', label: 'Gemma 3 · 4B', size: '3,3 Go', note: 'bon équilibre, Mac avec 8 Go de mémoire ou plus' },
-  { id: 'qwen3:8b', label: 'Qwen3 · 8B', size: '5,2 Go', note: 'plus malin, Mac avec 16 Go de mémoire ou plus' },
+  { id: 'llama3.2:3b', label: 'Llama 3.2 · 3B', size: '2 Go', note: 'très léger, pour tout Mac · sait gérer tes fichiers' },
+  { id: 'gemma3:4b', label: 'Gemma 3 · 4B', size: '3,3 Go', note: 'bon équilibre, Mac avec 8 Go de mémoire ou plus · discussion seulement, pas de fichiers' },
+  { id: 'qwen3:8b', label: 'Qwen3 · 8B', size: '5,2 Go', note: 'le plus fiable pour gérer tes fichiers, Mac avec 16 Go de mémoire ou plus' },
 ];
 const OLLAMA = () => (process.env.OLLAMA_HOST || 'http://127.0.0.1:11434').replace(/\/$/, '').replace(/^(?!https?:)/, 'http://');
 
@@ -210,8 +210,34 @@ export function claudeEnv() {
   return key ? { ...process.env, ANTHROPIC_API_KEY: key } : undefined;
 }
 
+/** Modèle local choisi dans Connexions, ou null. */
+export function localModel() {
+  return load().ollama?.model || null;
+}
+
 /**
- * Conversation simple avec ChatGPT ou Gemini (sans outils).
+ * Un tour de conversation avec le modèle local (API /api/chat d'Ollama), outils compris si `body.tools`.
+ * En mode simulé sans OLLAMA_HOST, répond sans rien appeler.
+ */
+export async function ollamaChat(body, signal) {
+  if (FAKE && !process.env.OLLAMA_HOST) {
+    const last = body.messages.at(-1)?.content || '';
+    return { message: { role: 'assistant', content: last.startsWith('[Message dicté') ? 'Simulation Local : je t\'écoute.' : `_(simulation Local)_ Bien reçu : **${last.slice(0, 60)}**` } };
+  }
+  let d;
+  try {
+    d = await http(`${OLLAMA()}/api/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stream: false, ...body }), signal });
+  } catch (e) {
+    if (e.status && /does not support tools/i.test(e.message)) throw Object.assign(new Error('Ce modèle ne sait pas utiliser d\'outils.'), { noTools: true });
+    if (e.name === 'AbortError' && signal?.aborted) throw e;
+    throw new Error(e.status ? e.message.replace(/^Clé refusée : /, '') : "Le modèle local ne répond pas : vérifie que l'app Ollama est ouverte.");
+  }
+  if (d?.message?.content) d.message.content = d.message.content.replace(/<think>[\s\S]*?<\/think>\s*/g, '');
+  return d;
+}
+
+/**
+ * Conversation simple avec ChatGPT, Gemini ou le modèle local (sans outils).
  * @param {'openai'|'google'} provider
  * @param {{system: string, messages: {role: 'user'|'assistant', text: string}[]}} o
  */
@@ -224,13 +250,8 @@ export async function chat(provider, { system, messages, signal }) {
   }
   const opts = (body, headers) => ({ method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal });
   if (provider === 'ollama') {
-    let d;
-    try {
-      d = await http(`${OLLAMA()}/api/chat`, opts({ model: c.model, stream: false, messages: [{ role: 'system', content: system }, ...messages.map((m) => ({ role: m.role, content: m.text }))] }, {}));
-    } catch (e) {
-      throw new Error(e.status ? e.message : "Le modèle local ne répond pas : vérifie que l'app Ollama est ouverte.");
-    }
-    return (d.message?.content || '').replace(/<think>[\s\S]*?<\/think>\s*/g, '');
+    const d = await ollamaChat({ model: c.model, messages: [{ role: 'system', content: system }, ...messages.map((m) => ({ role: m.role, content: m.text }))] }, signal);
+    return d.message?.content || '';
   }
   if (provider === 'openai') {
     const d = await http('https://api.openai.com/v1/chat/completions', opts(
