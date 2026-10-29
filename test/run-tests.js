@@ -486,6 +486,19 @@ await test('modèle local : crée, lit et résume des fichiers, demande avant de
   }
 });
 
+await test('crédit épuisé : explique quoi faire au lieu du message brut', async () => {
+  const { friendlyError } = await import('../src/agent.js');
+  const { connect, disconnect } = await import('../src/providers.js');
+  const m = friendlyError(new Error('Claude Code returned an error result: Credit balance is too low'));
+  assert.match(m, /Plus de crédit sur la clé API utilisée par Claude Code/);
+  assert.match(m, /abonnement Claude/);
+  assert.doesNotMatch(m, /Credit balance/);
+  await connect('sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123');
+  assert.match(friendlyError('Credit balance is too low'), /ta clé Claude enregistrée dans Connexions/);
+  disconnect('anthropic');
+  assert.equal(friendlyError('autre souci'), 'autre souci');
+});
+
 console.log(`\n${passed} test(s) réussi(s)${process.exitCode ? ', des échecs' : ''}.`);
 for (const pr of manager.projects.values()) pr.dispose();
 fs.rmSync(tmp, { recursive: true, force: true });

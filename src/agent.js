@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import { z } from 'zod';
 import { inbox } from './inbox.js';
 import { getConfig } from './config.js';
-import { claudeEnv } from './providers.js';
+import { claudeEnv, getKey } from './providers.js';
 import { explainTool } from './explain.js';
 
 const FAKE = process.env.MAESTRO_FAKE === '1';
@@ -248,6 +248,7 @@ export async function runAgent(o) {
           turns: msg.num_turns,
           durationMs: msg.duration_ms,
         };
+        if (!final.ok && final.text) final.text = friendlyError(final.text);
       }
     }
   } catch (err) {
@@ -267,14 +268,25 @@ function apiErrorLabel(code) {
     {
       authentication_failed: "Claude n'est pas connecté. Ouvre la page Connexions de Chlamyd.I.A. et colle ta clé Claude.",
       rate_limit: 'Limite d\'utilisation atteinte. Réessaie plus tard ou baisse le nombre d\'agents en parallèle.',
-      billing_error: 'Problème de facturation sur ton compte.',
+      billing_error: noCreditMessage(),
       overloaded: 'Serveurs surchargés, nouvelle tentative…',
     }[code] || `Erreur API : ${code}`
   );
 }
 
-function friendlyError(err) {
+/** Plus de crédit : la clé API utilisée est vide. Avec un abonnement Claude, il suffit de ne pas utiliser de clé. */
+export function noCreditMessage() {
+  const where = getKey('anthropic')
+    ? 'ta clé Claude enregistrée dans Connexions'
+    : process.env.ANTHROPIC_API_KEY
+      ? 'la clé ANTHROPIC_API_KEY définie dans ton terminal (fichier ~/.zshrc)'
+      : 'la clé API utilisée par Claude Code';
+  return `Plus de crédit sur ${where}. Si tu as un abonnement Claude (Pro ou Max), retire cette clé : Chlamyd.I.A. utilisera ta connexion Claude Code, comprise dans l'abonnement (au besoin, tape claude puis /login). Sinon, recharge des crédits sur console.anthropic.com, ou choisis le modèle local en haut de la page Assistant.`;
+}
+
+export function friendlyError(err) {
   const m = String(err?.message || err);
+  if (/credit balance|billing|insufficient.?credit|purchase credits/i.test(m)) return noCreditMessage();
   if (/ENOENT|spawn/.test(m)) return `Impossible de lancer Claude Code (${trunc(m, 160)}). Vérifie que \`claude\` est installé.`;
   if (/auth|login|401/i.test(m)) return "Claude n'est pas connecté. Ouvre la page Connexions de Chlamyd.I.A. et colle ta clé Claude.";
   return trunc(m, 400);
