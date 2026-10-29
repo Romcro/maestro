@@ -124,7 +124,7 @@ class Assistant {
                 tools.push({ icon: e.icon, label: e.label });
                 this.live = { text: reply, tools };
                 this.status();
-              } else if (e.type === 'error') {
+              } else if (e.type === 'error' && !tools.some((t) => t.label === e.message)) {
                 tools.push({ icon: 'error', label: e.message });
               }
             },
@@ -133,6 +133,8 @@ class Assistant {
         if (r.sessionId) this.data.sessionId = r.sessionId;
         this.data.cost = (this.data.cost || 0) + (r.cost || 0);
         const finalText = r.ok ? r.text || reply : r.aborted ? `${reply}\n\n_(arrêté)_`.trim() : `⚠️ ${r.text}`;
+        // L'erreur est déjà dans le texte : inutile de la répéter dans la liste des actions.
+        if (!r.ok) for (let i = tools.length - 1; i >= 0; i--) if (tools[i].icon === 'error' && r.text.includes(tools[i].label)) tools.splice(i, 1);
         this.push({ role: 'assistant', text: finalText, tools, routine, cost: r.cost, ...(provider ? { provider } : {}), ...(voice ? { voice: true } : {}) });
         if (routine) notify({ title: `Routine « ${routine} »`, body: finalText.replace(/[#*_`>]/g, '').slice(0, 180), kind: 'info' });
         else notify({ title: 'Assistant', body: finalText.replace(/[#*_`>]/g, '').slice(0, 180), kind: 'assistant' });

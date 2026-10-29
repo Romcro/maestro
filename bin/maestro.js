@@ -186,7 +186,8 @@ const commands = {
   },
 
   async update() {
-    const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { cwd: REPO_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trim();
+    // Avec stdio: 'inherit', execFileSync renvoie null : d'où le ?? ''.
+    const run = (cmd, args, opts = {}) => (execFileSync(cmd, args, { cwd: REPO_DIR, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }) ?? '').trim();
     const tryRun = (cmd, args) => { try { return run(cmd, args); } catch { return null; } };
     console.log(`${c.violet('◆ Chlamyd.I.A.')} — mise à jour`);
 
