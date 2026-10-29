@@ -6,7 +6,7 @@ import { manager } from './manager.js';
 import { inbox } from './inbox.js';
 import { assistant } from './assistant.js';
 import { claudeDir, listSkills, listScheduledTasks } from './claude-account.js';
-import { PROVIDERS, connect, disconnect, setModel, publicInfo } from './providers.js';
+import { PROVIDERS, LOCAL_MODELS, connect, connectLocal, pullLocalModel, disconnect, setModel, publicInfo } from './providers.js';
 import { importClaudeExport, fetchClaudeRoutines, copyRoutineLocally, accountSnapshot } from './claude-sync.js';
 import { bus, broadcast, setPresence, notify } from './bus.js';
 import { getConfig, updateConfig, findClaude } from './config.js';
@@ -188,6 +188,25 @@ route('POST', '/api/connections', async ({ body }) => {
   const info = await connect(body.key, body.provider || null);
   broadcast('connections', publicInfo());
   return info;
+});
+// Modèle local (Ollama) : vérifier qu'il tourne, ou télécharger un modèle avec la progression en direct.
+route('GET', '/api/local-models', () => LOCAL_MODELS);
+route('POST', '/api/connections/ollama/check', async () => {
+  const info = await connectLocal();
+  broadcast('connections', publicInfo());
+  return info;
+});
+route('POST', '/api/connections/ollama/pull', ({ body }) => {
+  const model = String(body.model || '');
+  fire(
+    pullLocalModel(model, (p) => broadcast('local-pull', { model, ...p }))
+      .then(() => {
+        broadcast('local-pull', { model, status: 'terminé', percent: 100, done: true });
+        broadcast('connections', publicInfo());
+      })
+      .catch((e) => broadcast('local-pull', { model, error: e.message, done: true })),
+  );
+  return { ok: true };
 });
 route('PUT', '/api/connections/:id', ({ params, body }) => {
   if (!PROVIDERS[params.id]) throw Object.assign(new Error('Service inconnu'), { status: 404 });

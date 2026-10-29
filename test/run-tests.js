@@ -346,6 +346,28 @@ await test("l'assistant peut discuter avec ChatGPT à la place de Claude", async
   updateConfig({ assistant: { provider: 'claude' } });
 });
 
+await test('modèle local gratuit : installation, connexion et discussion', async () => {
+  const { connectLocal, pullLocalModel, publicInfo, LOCAL_MODELS } = await import('../src/providers.js');
+  const { assistant } = await import('../src/assistant.js');
+  const { updateConfig } = await import('../src/config.js');
+  await assert.rejects(() => connectLocal(), /aucun modèle/);
+  await assert.rejects(() => pullLocalModel('rm -rf /'), /invalide/);
+  const steps = [];
+  const info = await pullLocalModel(LOCAL_MODELS[1].id, (p) => steps.push(p.percent));
+  assert.deepEqual(steps, [0, 40, 100]);
+  assert.equal(info.connected, true);
+  assert.equal(info.local, true);
+  assert.equal(info.hint, null, 'pas de clé pour le local');
+  assert.equal(publicInfo().ollama.model, 'gemma3:4b');
+  updateConfig({ assistant: { provider: 'ollama' } });
+  const before = assistant.data.messages.length;
+  assistant.send('Salut');
+  await wait(() => assistant.data.messages.length >= before + 2 && !assistant.busy);
+  assert.equal(assistant.data.messages.at(-1).provider, 'ollama');
+  assert.match(await assistant.systemOther('ollama'), /modèle local/);
+  updateConfig({ assistant: { provider: 'claude' } });
+});
+
 console.log(`\n${passed} test(s) réussi(s)${process.exitCode ? ', des échecs' : ''}.`);
 for (const pr of manager.projects.values()) pr.dispose();
 fs.rmSync(tmp, { recursive: true, force: true });

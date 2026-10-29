@@ -164,7 +164,7 @@ class Assistant {
     const now = new Date().toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
     const status = await this.tools().find((t) => t.name === 'projects_status').handler({});
     return [
-      `# Tu t'appelles Chlamyd.I.A. : tu es l'assistant personnel de l'utilisateur, sur son Mac (propulsé ici par ${PROVIDERS[provider].name}).`,
+      `# Tu t'appelles Chlamyd.I.A. : tu es l'assistant personnel de l'utilisateur, sur son Mac (propulsé ici par ${provider === 'ollama' ? 'un modèle local, qui tourne sur son Mac' : PROVIDERS[provider].name}).`,
       `Nous sommes le ${now}. Réponds en français, en le tutoyant, de façon directe et concise, en Markdown léger.`,
       "Chlamyd.I.A. orchestre des agents Claude Code sur ses projets de code. Dans ce mode, tu n'as pas d'outils : tu ne peux ni lancer ou mettre en pause un projet, ni lire ses mails, routines ou fichiers. Si on te le demande, dis-lui de choisir Claude comme cerveau de l'assistant (en haut de la page Assistant).",
       `\n## État de ses projets\n${status}`,

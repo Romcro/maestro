@@ -1,4 +1,5 @@
-// Connexions aux services d'IA : Claude (Anthropic), ChatGPT (OpenAI), Gemini (Google).
+// Connexions aux services d'IA : Claude (Anthropic), ChatGPT (OpenAI), Gemini (Google),
+// et un modèle local gratuit via Ollama (aucune clé, rien ne sort du Mac).
 // L'utilisateur colle sa clé une seule fois : elle est reconnue, vérifiée auprès du service,
 // puis rangée dans ~/.maestro/keys.json, lisible par lui seul. Elle n'est jamais renvoyée au navigateur.
 import fs from 'node:fs';
@@ -28,7 +29,22 @@ export const PROVIDERS = {
     detect: /^AIza[\w-]{30,}$/,
     prefer: [/^gemini-[\d.]+-pro$/, /^gemini-[\d.]+-flash$/, /^gemini-/],
   },
+  ollama: {
+    name: 'Local',
+    company: 'Ollama, sur ton Mac',
+    keyUrl: 'https://ollama.com/download',
+    local: true,
+    prefer: [/^qwen3/, /^gemma3/, /^llama3/],
+  },
 };
+
+// Modèles locaux conseillés : du plus léger au plus malin. La taille est celle du téléchargement.
+export const LOCAL_MODELS = [
+  { id: 'llama3.2:3b', label: 'Llama 3.2 · 3B', size: '2 Go', note: 'très léger, pour tout Mac' },
+  { id: 'gemma3:4b', label: 'Gemma 3 · 4B', size: '3,3 Go', note: 'bon équilibre, Mac avec 8 Go de mémoire ou plus' },
+  { id: 'qwen3:8b', label: 'Qwen3 · 8B', size: '5,2 Go', note: 'plus malin, Mac avec 16 Go de mémoire ou plus' },
+];
+const OLLAMA = () => (process.env.OLLAMA_HOST || 'http://127.0.0.1:11434').replace(/\/$/, '').replace(/^(?!https?:)/, 'http://');
 
 const file = () => paths.keys;
 const load = () => readJSON(file(), {});
@@ -40,7 +56,7 @@ function save(data) {
 /** Devine le service d'après la forme de la clé. */
 export function detectProvider(key) {
   const k = String(key || '').trim();
-  return Object.keys(PROVIDERS).find((id) => PROVIDERS[id].detect.test(k)) || null;
+  return Object.keys(PROVIDERS).find((id) => PROVIDERS[id].detect?.test(k)) || null;
 }
 
 /** Choisit un modèle par défaut parmi ceux que la clé donne, du plus récent au plus ancien. */
@@ -87,6 +103,7 @@ async function listModels(provider, key) {
 export async function connect(rawKey, provider = null) {
   const key = String(rawKey || '').trim().replace(/^["']|["']$/g, '');
   const id = provider || detectProvider(key);
+  if (id === 'ollama') return connectLocal();
   if (!id || !PROVIDERS[id]) throw Object.assign(new Error("Je ne reconnais pas cette clé. Elle commence normalement par « sk-ant- » (Claude), « sk- » (ChatGPT) ou « AIza » (Gemini)."), { status: 400 });
   if (!PROVIDERS[id].detect.test(key)) throw Object.assign(new Error(`Ce n'est pas une clé ${PROVIDERS[id].name} valide.`), { status: 400 });
   let models;
@@ -99,6 +116,64 @@ export async function connect(rawKey, provider = null) {
   data[id] = { key, models, model: data[id]?.model && models.includes(data[id].model) ? data[id].model : pickModel(id, models), connectedAt: new Date().toISOString() };
   save(data);
   return publicInfo()[id];
+}
+
+/** Branche Ollama : vérifie qu'il tourne et relève les modèles installés. */
+export async function connectLocal() {
+  let models;
+  if (FAKE) models = fakeLocal.slice();
+  else {
+    try {
+      const d = await http(`${OLLAMA()}/api/tags`);
+      models = (d.models || []).map((m) => m.name);
+    } catch {
+      throw Object.assign(new Error("Ollama ne répond pas. Installe-le depuis ollama.com, puis ouvre l'app Ollama (une petite icône apparaît en haut de l'écran)."), { status: 400 });
+    }
+  }
+  if (!models.length) throw Object.assign(new Error('Ollama tourne, mais aucun modèle n\'est installé : choisis-en un à installer.'), { status: 400 });
+  const data = load();
+  data.ollama = { local: true, models, model: data.ollama?.model && models.includes(data.ollama.model) ? data.ollama.model : pickModel('ollama', models), connectedAt: new Date().toISOString() };
+  save(data);
+  return publicInfo().ollama;
+}
+const fakeLocal = [];
+
+/** Télécharge un modèle dans Ollama. onProgress reçoit { status, percent }. */
+export async function pullLocalModel(model, onProgress = () => {}) {
+  if (!LOCAL_MODELS.some((m) => m.id === model) && !/^[\w.-]+(:[\w.-]+)?$/.test(model)) throw Object.assign(new Error('Nom de modèle invalide.'), { status: 400 });
+  if (FAKE) {
+    for (const percent of [0, 40, 100]) onProgress({ status: percent < 100 ? 'téléchargement' : 'terminé', percent });
+    if (!fakeLocal.includes(model)) fakeLocal.push(model);
+    return connectLocal();
+  }
+  let res;
+  try {
+    res = await fetch(`${OLLAMA()}/api/pull`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model, stream: true }) });
+  } catch {
+    throw Object.assign(new Error("Ollama ne répond pas. Ouvre l'app Ollama, puis réessaie."), { status: 400 });
+  }
+  if (!res.ok) throw Object.assign(new Error(`Ollama a refusé le téléchargement (${res.status}).`), { status: 400 });
+  const decoder = new TextDecoder();
+  let buf = '';
+  let last = -1;
+  for await (const chunk of res.body) {
+    buf += decoder.decode(chunk, { stream: true });
+    let i;
+    while ((i = buf.indexOf('\n')) >= 0) {
+      const line = buf.slice(0, i).trim();
+      buf = buf.slice(i + 1);
+      if (!line) continue;
+      let d;
+      try { d = JSON.parse(line); } catch { continue; }
+      if (d.error) throw Object.assign(new Error(d.error), { status: 400 });
+      const percent = d.total ? Math.floor((d.completed / d.total) * 100) : null;
+      if (percent !== last || !d.total) {
+        last = percent;
+        onProgress({ status: d.status, percent });
+      }
+    }
+  }
+  return connectLocal();
 }
 
 export function disconnect(provider) {
@@ -124,7 +199,7 @@ export function publicInfo() {
   return Object.fromEntries(
     Object.entries(PROVIDERS).map(([id, p]) => {
       const c = data[id];
-      return [id, { id, name: p.name, company: p.company, keyUrl: p.keyUrl, connected: !!c, hint: c ? `…${c.key.slice(-4)}` : null, model: c?.model || null, models: c?.models || [], connectedAt: c?.connectedAt || null }];
+      return [id, { id, name: p.name, company: p.company, keyUrl: p.keyUrl, local: !!p.local, connected: !!c, hint: c?.key ? `…${c.key.slice(-4)}` : null, model: c?.model || null, models: c?.models || [], connectedAt: c?.connectedAt || null }];
     }),
   );
 }
@@ -148,6 +223,15 @@ export async function chat(provider, { system, messages, signal }) {
     return last.startsWith('[Message dicté') ? `Simulation ${PROVIDERS[provider].name} : je t'écoute.` : `_(simulation ${PROVIDERS[provider].name})_ Bien reçu : **${last.slice(0, 60)}**`;
   }
   const opts = (body, headers) => ({ method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body), signal });
+  if (provider === 'ollama') {
+    let d;
+    try {
+      d = await http(`${OLLAMA()}/api/chat`, opts({ model: c.model, stream: false, messages: [{ role: 'system', content: system }, ...messages.map((m) => ({ role: m.role, content: m.text }))] }, {}));
+    } catch (e) {
+      throw new Error(e.status ? e.message : "Le modèle local ne répond pas : vérifie que l'app Ollama est ouverte.");
+    }
+    return (d.message?.content || '').replace(/<think>[\s\S]*?<\/think>\s*/g, '');
+  }
   if (provider === 'openai') {
     const d = await http('https://api.openai.com/v1/chat/completions', opts(
       { model: c.model, messages: [{ role: 'system', content: system }, ...messages.map((m) => ({ role: m.role, content: m.text }))] },
