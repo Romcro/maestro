@@ -822,7 +822,7 @@ function renderClaudePage() {
   </div>`;
 }
 // Monogrammes maison : pas de logos de marques (leurs règles l'interdisent sans accord).
-const GLYPH = { anthropic: 'C', openai: 'G', google: '✦' };
+const GLYPH = { anthropic: 'C', openai: 'G', google: '✦', ollama: 'L' };
 const HOWTO = {
   anthropic: ['Ouvre la console Anthropic et connecte-toi (ou crée un compte).', 'Va dans <b>API Keys</b> › <b>Create Key</b>, donne-lui un nom (ex. Chlamyd.I.A.) et copie la clé.', 'Ajoute un peu de crédit dans <b>Billing</b> : l\'API est facturée à l\'usage, à part de l\'abonnement Claude.'],
   openai: ['Ouvre la plateforme OpenAI et connecte-toi avec ton compte ChatGPT.', 'Clique sur <b>Create new secret key</b> et copie la clé.', 'L\'API est facturée à l\'usage, à part de l\'abonnement ChatGPT Plus : ajoute un peu de crédit dans <b>Billing</b>.'],
@@ -830,20 +830,20 @@ const HOWTO = {
 };
 function renderProviders() {
   const cs = S.connections || {};
-  return `<div class="providers">${['anthropic', 'openai', 'google'].map((id) => {
+  return `<div class="providers">${['anthropic', 'openai', 'google', 'ollama'].map((id) => {
     const c = cs[id] || { id, name: id };
     const local = id === 'anthropic' && !c.connected && S.claude;
     return `<div class="provider${c.connected || local ? ' on' : ''}" data-provider="${id}">
       <div class="glyph" aria-hidden="true">${GLYPH[id]}</div>
       <div class="pv-body">
         <div class="pv-name">${esc(c.name)}<small>${esc(c.company || '')}</small></div>
-        <div class="pv-state">${c.connected ? `<span class="dot on"></span>Connecté · clé ${esc(c.hint)}` : local ? '<span class="dot on"></span>Via Claude Code sur ce Mac' : '<span class="dot"></span>Non connecté'}</div>
+        <div class="pv-state">${c.connected && c.local ? '<span class="dot on"></span>Prêt · gratuit, hors ligne' : c.connected ? `<span class="dot on"></span>Connecté · clé ${esc(c.hint)}` : local ? '<span class="dot on"></span>Via Claude Code sur ce Mac' : `<span class="dot"></span>${c.local ? 'Gratuit, sans compte' : 'Non connecté'}`}</div>
         ${c.connected && c.models?.length > 1 ? `<select data-model="${id}" aria-label="Modèle ${esc(c.name)}">${c.models.map((m) => `<option ${m === c.model ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>` : c.model ? `<div class="pv-state">${esc(c.model)}</div>` : ''}
       </div>
-      <div class="btn-row">${c.connected ? `<button class="btn ghost sm" data-action="disconnect" data-id="${id}">Déconnecter</button>` : `<button class="btn sm${local ? ' ghost' : ' primary'}" data-action="connect" data-id="${id}">${local ? 'Utiliser une clé' : 'Connecter'}</button>`}</div>
+      <div class="btn-row">${c.connected ? `<button class="btn ghost sm" data-action="disconnect" data-id="${id}">Déconnecter</button>` : `<button class="btn sm${local ? ' ghost' : ' primary'}" data-action="${c.local ? 'connect-local' : 'connect'}" data-id="${id}">${local ? 'Utiliser une clé' : c.local ? 'Installer' : 'Connecter'}</button>`}${c.connected && c.local ? `<button class="btn ghost sm" data-action="connect-local">Ajouter un modèle</button>` : ''}</div>
     </div>`;
   }).join('')}</div>
-  <p class="muted" style="margin:10px 0 0;font-size:13px">Claude fait travailler les agents et l'assistant. ChatGPT et Gemini peuvent remplacer Claude pour discuter avec l'assistant (en haut de la page Assistant).</p>`;
+  <p class="muted" style="margin:10px 0 0;font-size:13px">Claude fait travailler les agents et l'assistant. ChatGPT, Gemini ou le modèle local peuvent remplacer Claude pour discuter avec l'assistant (en haut de la page Assistant). Le modèle local tourne sur ton Mac : gratuit, sans compte, et rien ne sort de ton ordinateur.</p>`;
 }
 function openConnect(id) {
   const c = S.connections?.[id];
@@ -863,6 +863,44 @@ function openConnect(id) {
   </form>`;
   dlg.showModal();
   dlg.querySelector('input[name="key"]').focus();
+}
+// Modèle local : installer Ollama, télécharger un modèle (progression en direct), vérifier.
+let localPull = null;
+async function openLocal() {
+  const models = await api('GET', '/api/local-models').catch(() => []);
+  const have = new Set(S.connections?.ollama?.models || []);
+  const dlg = $('#settings');
+  dlg.innerHTML = `<form method="dialog" data-form="connect-local" class="connect">
+    <div class="dlg-head"><h2>Modèle local, gratuit</h2><button class="btn ghost icon sm" value="cancel" aria-label="Fermer">${icon('x')}</button></div>
+    <div class="dlg-body">
+      <p class="muted" style="margin:4px 0 0">Il tourne sur ton Mac grâce à Ollama : aucun crédit, aucun compte, et ça marche même hors ligne. Il est moins fort que Claude, et plus lent sur un petit Mac.</p>
+      <ol class="steps">
+        <li><span class="n">1</span><div><span>Installe <b>Ollama</b> : télécharge-le, ouvre le fichier et glisse l'app dans Applications. Ouvre-la une fois.</span><div><a class="btn sm" href="https://ollama.com/download" target="_blank" rel="noopener">${icon('web')}Télécharger Ollama</a></div></div></li>
+        <li><span class="n">2</span><div><span>Choisis un modèle. Il se télécharge une seule fois.</span>
+          <div class="local-models">${models.map((m) => `<button type="button" class="local-model${have.has(m.id) ? ' have' : ''}" data-action="local-pull" data-model="${esc(m.id)}" ${localPull ? 'disabled' : ''}><b>${esc(m.label)}</b><span>${esc(m.size)} · ${esc(m.note)}</span>${have.has(m.id) ? '<i>Installé</i>' : ''}</button>`).join('')}</div>
+          <div class="pull" data-pull ${localPull ? '' : 'hidden'}><div class="bar"><span class="active" style="width:${localPull?.percent || 0}%"></span></div><div class="help" data-pull-label>${esc(localPull ? `${localPull.model} : ${localPull.status || ''} ${localPull.percent ?? ''}%` : '')}</div></div>
+        </div></li>
+        <li><span class="n">3</span><div><span>C'est prêt : il apparaît dans les Connexions et en haut de l'assistant.</span></div></li>
+      </ol>
+    </div>
+    <div class="dlg-foot"><button class="btn ghost" value="cancel">Fermer</button><button class="btn primary" value="default" data-action="local-check">Vérifier</button></div>
+  </form>`;
+  if (!dlg.open) dlg.showModal();
+}
+function showPull(p) {
+  localPull = p.done ? null : p;
+  const box = $('#settings [data-pull]');
+  if (box) {
+    box.hidden = false;
+    box.querySelector('.active').style.width = `${p.percent ?? 0}%`;
+    box.querySelector('[data-pull-label]').textContent = p.error ? `⚠️ ${p.error}` : `${p.model} : ${p.status || ''}${p.percent != null ? ` ${p.percent} %` : ''}`;
+    $('#settings').querySelectorAll('[data-action="local-pull"]').forEach((b) => { b.disabled = !p.done; });
+  }
+  if (p.done && p.error) toast({ title: 'Téléchargement impossible', body: p.error, kind: 'error' });
+  if (p.done && !p.error) {
+    toast({ title: 'Modèle local prêt', body: `${p.model} est installé.`, kind: 'success' });
+    if ($('#settings').open && $('#settings [data-form="connect-local"]')) openLocal();
+  }
 }
 const KEY_SHAPES = { anthropic: /^sk-ant-/, openai: /^sk-(?!ant-)/, google: /^AIza/ };
 document.addEventListener('input', (e) => {
@@ -888,7 +926,7 @@ async function saveConnect(form) {
 }
 // Cerveau de l'assistant : Claude (avec ses outils) ou une autre IA connectée, pour discuter.
 function renderBrain() {
-  const others = ['openai', 'google'].filter((id) => S.connections?.[id]?.connected);
+  const others = ['openai', 'google', 'ollama'].filter((id) => S.connections?.[id]?.connected);
   if (!others.length) return '';
   const cur = S.config?.assistant?.provider || 'claude';
   const opts = [['claude', 'Claude'], ...others.map((id) => [id, S.connections[id].name])];
@@ -1359,6 +1397,7 @@ function connect() {
   });
   es.addEventListener('assistant-status', (e) => { Object.assign(S.assistant, JSON.parse(e.data)); render(); });
   es.addEventListener('assistant-reset', (e) => { S.assistant = JSON.parse(e.data); render(); });
+  es.addEventListener('local-pull', (e) => showPull(JSON.parse(e.data)));
   es.addEventListener('connections', (e) => { S.connections = JSON.parse(e.data); render(); });
   es.addEventListener('claude-sync', (e) => { S.account = { ...(S.account || {}), ...JSON.parse(e.data) }; render(); });
   es.addEventListener('config', (e) => { S.config = JSON.parse(e.data); S.assistant.routines = S.config.routines; render(); });
@@ -1428,6 +1467,14 @@ document.addEventListener('click', async (e) => {
     }
     case 'suggest': sendAssistant(t.dataset.text); break;
     case 'connect': openConnect(t.dataset.id); break;
+    case 'connect-local': openLocal(); break;
+    case 'local-pull': localPull = { model: t.dataset.model, status: 'démarrage', percent: 0 }; showPull(localPull); act('POST', '/api/connections/ollama/pull', { model: t.dataset.model }); break;
+    case 'local-check': {
+      e.preventDefault();
+      const r = await act('POST', '/api/connections/ollama/check');
+      if (r) { $('#settings').close(); toast({ title: 'Modèle local connecté', body: r.model || '', kind: 'success' }); }
+      break;
+    }
     case 'connect-save': e.preventDefault(); saveConnect(t.closest('form')); break;
     case 'disconnect': {
       const c = S.connections?.[t.dataset.id];
@@ -1489,6 +1536,7 @@ document.addEventListener('submit', async (e) => {
   e.preventDefault();
   const kind = form.dataset.form;
   if (kind === 'connect') return saveConnect(form);
+  if (kind === 'connect-local') return;
   const ta = form.querySelector('textarea');
   const text = ta?.value.trim();
   const clear = () => { if (ta) { delete drafts[ta.dataset.key]; ta.value = ''; autosize(ta); } };
