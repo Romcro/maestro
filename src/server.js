@@ -6,6 +6,7 @@ import { manager } from './manager.js';
 import { inbox } from './inbox.js';
 import { assistant } from './assistant.js';
 import { claudeDir, listSkills, listScheduledTasks } from './claude-account.js';
+import { PROVIDERS, connect, disconnect, setModel, publicInfo } from './providers.js';
 import { importClaudeExport, fetchClaudeRoutines, copyRoutineLocally, accountSnapshot } from './claude-sync.js';
 import { bus, broadcast, setPresence, notify } from './bus.js';
 import { getConfig, updateConfig, findClaude } from './config.js';
@@ -76,6 +77,7 @@ function snapshot() {
     assistant: assistant.snapshot(),
     config: getConfig(),
     claude: findClaude(),
+    connections: publicInfo(),
     platform: process.platform,
     fake: process.env.MAESTRO_FAKE === '1',
   };
@@ -180,6 +182,26 @@ route('POST', '/api/assistant', ({ body }) => {
 route('POST', '/api/assistant/stop', () => (assistant.stop(), { ok: true }));
 route('POST', '/api/assistant/reset', () => (assistant.reset(), { ok: true }));
 route('GET', '/api/claude-account', () => ({ dir: claudeDir(), skills: listSkills(), scheduled: listScheduledTasks() }));
+// Connexions : la clé arrive une fois du navigateur (127.0.0.1 + jeton) et n'en ressort jamais.
+route('GET', '/api/connections', () => publicInfo());
+route('POST', '/api/connections', async ({ body }) => {
+  const info = await connect(body.key, body.provider || null);
+  broadcast('connections', publicInfo());
+  return info;
+});
+route('PUT', '/api/connections/:id', ({ params, body }) => {
+  if (!PROVIDERS[params.id]) throw Object.assign(new Error('Service inconnu'), { status: 404 });
+  setModel(params.id, String(body.model || ''));
+  broadcast('connections', publicInfo());
+  return publicInfo()[params.id];
+});
+route('DELETE', '/api/connections/:id', ({ params }) => {
+  if (!PROVIDERS[params.id]) throw Object.assign(new Error('Service inconnu'), { status: 404 });
+  disconnect(params.id);
+  if (getConfig().assistant?.provider === params.id) broadcast('config', updateConfig({ assistant: { provider: 'claude' } }));
+  broadcast('connections', publicInfo());
+  return { ok: true };
+});
 route('GET', '/api/claude', () => ({ dir: claudeDir(), skills: listSkills(), scheduled: listScheduledTasks(), ...accountSnapshot() }));
 route('POST', '/api/claude/routines/fetch', () => (fire(fetchClaudeRoutines()), { ok: true }));
 route('POST', '/api/claude/routines/:id/copy', ({ params }) => copyRoutineLocally(decodeURIComponent(params.id)));

@@ -143,7 +143,7 @@ const P = {
   bell: '<path d="M6 16V11a6 6 0 0 1 12 0v5l2 2H4z"/><path d="M10 20.5a2 2 0 0 0 4 0"/>',
 };
 const icon = (name, cls = '') => `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${P[name] || P.tool}</svg>`;
-const REACTOR = `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><circle cx="32" cy="32" r="27" stroke="currentColor" stroke-opacity=".45" stroke-width="3.5" stroke-dasharray="1.8 3.6"/><circle cx="32" cy="32" r="19" stroke="currentColor" stroke-width="2.6" stroke-dasharray="22 7.8"/><circle cx="32" cy="32" r="12" stroke="currentColor" stroke-opacity=".6" stroke-width="1.2"/><circle cx="32" cy="32" r="7.5" fill="currentColor"/></svg>`;
+const REACTOR = `<svg viewBox="0 0 64 64" fill="none" aria-hidden="true"><defs><linearGradient id="iri-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5ee9ff"/><stop offset=".45" stop-color="#a77bff"/><stop offset=".8" stop-color="#ff5fd2"/><stop offset="1" stop-color="#ffb37a"/></linearGradient></defs><path d="M32 7c11 0 23 7 24 20 1 14-9 29-23 30S7 48 8 34 20 7 32 7z" stroke="url(#iri-g)" stroke-width="3.5"/><circle cx="32" cy="32" r="9.5" fill="url(#iri-g)"/><circle cx="32" cy="32" r="4" fill="#fff" fill-opacity=".85"/><circle cx="49" cy="16" r="2.6" fill="#5ee9ff"/></svg>`;
 const BRAND = `<div class="brand">${REACTOR}<span>Chlamyd.I.A.<small>Système en ligne</small></span></div>`;
 
 const STATUS = {
@@ -171,7 +171,7 @@ function parseRoute() {
   if ((m = h.match(/^\/p\/([^/]+)/))) return { view: 'project', pid: m[1], sid: null };
   if (h.startsWith('/inbox')) return { view: 'inbox' };
   if (h.startsWith('/assistant')) return { view: 'assistant' };
-  if (h.startsWith('/claude')) return { view: 'claude' };
+  if (h.startsWith('/claude') || h.startsWith('/connexions')) return { view: 'claude' };
   return { view: 'home' };
 }
 let R = parseRoute();
@@ -278,7 +278,7 @@ function renderSide() {
     <nav class="nav" aria-label="Navigation">
       <a class="nav-item" href="#/inbox"${cur('inbox')}>${icon('inbox')}<span>À traiter</span>${n ? `<span class="count">${n}</span>` : ''}</a>
       <a class="nav-item" href="#/assistant"${cur('assistant')}>${icon('chat')}<span>Assistant</span>${S.assistant.busy ? '<span class="dot on" style="margin-left:auto"></span>' : ''}</a>
-      <a class="nav-item" href="#/claude"${cur('claude')}>${icon('plug')}<span>Compte Claude</span>${S.account?.fetching ? '<span class="dot on" style="margin-left:auto"></span>' : ''}</a>
+      <a class="nav-item" href="#/claude"${cur('claude')}>${icon('plug')}<span>Connexions</span>${Object.values(S.connections || {}).some((c) => c.connected) || S.claude ? '' : '<span class="count">!</span>'}${S.account?.fetching ? '<span class="dot on" style="margin-left:auto"></span>' : ''}</a>
       <button class="nav-item" data-action="voice" title="Raccourci : ⌥ M">${icon('mic')}<span>${V.state === 'listening' ? 'J\'écoute…' : 'Parler à Chlamyd.I.A.'}</span></button>
     </nav>
     <div class="nav-heading">Projets</div>
@@ -384,7 +384,7 @@ function renderProject(p) {
     );
   }
   for (const w of p.warnings || []) banners.push(banner('error', esc(w), '', 'warn'));
-  if (!S.claude && !S.fake) banners.push(banner('terminal', "Chlamyd.I.A. n'a pas trouvé la commande <code>claude</code>. Les agents utilisent ta connexion Claude Code : installe-la et connecte-toi une fois avec <code>claude</code> dans un terminal."));
+  if (!S.claude && !S.fake && !S.connections?.anthropic?.connected) banners.push(banner('plug', "Connecte Claude pour que les agents puissent travailler : il suffit de coller ta clé, en une minute.", '<a class="btn sm" href="#/connexions">Connecter Claude</a>'));
 
   const attn = S.inbox.filter((i) => i.projectId === p.id);
   const head = `
@@ -734,6 +734,7 @@ function renderAssistant() {
       <div><h1>Assistant</h1><p>Il connaît l'état de tes projets et ton compte Claude : skills, routines, connecteurs (Gmail, agenda…).</p></div>
       <div class="btn-row">
         <button class="btn back icon" data-action="nav" aria-label="Menu">${icon('menu')}</button>
+        ${renderBrain()}
         <button class="btn ghost sm" data-action="settings" data-section="routines">${icon('clock')}Routines${a.routines?.length ? ` (${a.routines.length})` : ''}</button>
         ${msgs.length ? `<button class="btn ghost sm" data-action="assistant-reset">Nouvelle conversation</button>` : ''}
       </div>
@@ -745,6 +746,7 @@ function renderAssistant() {
         <div class="msg ${m.role}">
           ${m.routine && m.role === 'user' ? `<span class="tag">Routine « ${esc(m.routine)} » · ${clock(m.at)}</span>` : ''}
           ${m.voice && m.role === 'user' ? `<span class="tag">${icon('mic')}Dicté au micro</span>` : ''}
+          ${m.provider && m.role === 'assistant' ? `<span class="tag">${esc(S.connections?.[m.provider]?.name || m.provider)}</span>` : ''}
           ${m.role === 'user' ? `<div>${esc(m.text).replace(/\n/g, '<br>')}</div>` : `${m.tools?.length ? `<div class="tools">${m.tools.map((t) => `<span>${esc(t.label)}</span>`).join('')}</div>` : ''}${md(m.text)}`}
         </div>`).join('')}
       ${a.busy ? `<div class="msg assistant">${a.live?.tools?.length ? `<div class="tools">${a.live.tools.map((t) => `<span>${esc(t.label)}</span>`).join('')}</div>` : ''}${a.live?.text ? md(a.live.text) : ''}<div class="typing"><i></i><i></i><i></i></div></div>` : ''}
@@ -770,16 +772,17 @@ async function loadAccount() {
 }
 function renderClaudePage() {
   const a = S.account;
-  if (!a) { loadAccount(); return '<div class="page"><h1>Compte Claude</h1><p class="lead">Chargement…</p></div>'; }
+  if (!a) { loadAccount(); return '<div class="page"><h1>Connexions</h1><p class="lead">Chargement…</p></div>'; }
   const rt = a.routines || { routines: [] };
   const when = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : '');
   const copied = new Set((S.config?.routines || []).map((r) => r.claudeId).filter(Boolean));
   const row = (title, sub, actions) => `<div class="routine item"><div style="min-width:0"><div>${title}</div>${sub ? `<div class="what">${sub}</div>` : ''}</div><div class="btn-row">${actions}</div></div>`;
   return `<div class="page">
-    <div class="btn-row" style="justify-content:space-between"><h1>Compte Claude</h1><button class="btn back icon" data-action="nav" aria-label="Menu">${icon('menu')}</button></div>
-    <p class="lead">Tes projets, routines et skills Claude, utilisables ici et à la voix. Tout reste sur ton Mac.</p>
+    <div class="btn-row" style="justify-content:space-between"><h1>Connexions</h1><button class="btn back icon" data-action="nav" aria-label="Menu">${icon('menu')}</button></div>
+    <p class="lead">Branche tes IA en collant ta clé, une seule fois. Elle reste sur ton Mac, rangée dans un fichier que toi seul peux lire.</p>
+    ${renderProviders()}
 
-    <h3 style="margin:8px 0 8px">Routines claude.ai</h3>
+    <h3 style="margin:28px 0 8px">Routines claude.ai</h3>
     <div class="panel">
       <div class="btn-row" style="justify-content:space-between">
         <span class="muted">${a.fetching ? 'Lecture de tes routines par Claude Code…' : rt.fetchedAt ? `Lues le ${when(rt.fetchedAt)}` : 'Pas encore récupérées.'}</span>
@@ -818,6 +821,79 @@ function renderClaudePage() {
     </div>
   </div>`;
 }
+// Monogrammes maison : pas de logos de marques (leurs règles l'interdisent sans accord).
+const GLYPH = { anthropic: 'C', openai: 'G', google: '✦' };
+const HOWTO = {
+  anthropic: ['Ouvre la console Anthropic et connecte-toi (ou crée un compte).', 'Va dans <b>API Keys</b> › <b>Create Key</b>, donne-lui un nom (ex. Chlamyd.I.A.) et copie la clé.', 'Ajoute un peu de crédit dans <b>Billing</b> : l\'API est facturée à l\'usage, à part de l\'abonnement Claude.'],
+  openai: ['Ouvre la plateforme OpenAI et connecte-toi avec ton compte ChatGPT.', 'Clique sur <b>Create new secret key</b> et copie la clé.', 'L\'API est facturée à l\'usage, à part de l\'abonnement ChatGPT Plus : ajoute un peu de crédit dans <b>Billing</b>.'],
+  google: ['Ouvre Google AI Studio et connecte-toi avec ton compte Google.', 'Clique sur <b>Create API key</b> et copie la clé.', 'Gemini a une offre gratuite pour commencer, sans carte bancaire.'],
+};
+function renderProviders() {
+  const cs = S.connections || {};
+  return `<div class="providers">${['anthropic', 'openai', 'google'].map((id) => {
+    const c = cs[id] || { id, name: id };
+    const local = id === 'anthropic' && !c.connected && S.claude;
+    return `<div class="provider${c.connected || local ? ' on' : ''}" data-provider="${id}">
+      <div class="glyph" aria-hidden="true">${GLYPH[id]}</div>
+      <div class="pv-body">
+        <div class="pv-name">${esc(c.name)}<small>${esc(c.company || '')}</small></div>
+        <div class="pv-state">${c.connected ? `<span class="dot on"></span>Connecté · clé ${esc(c.hint)}` : local ? '<span class="dot on"></span>Via Claude Code sur ce Mac' : '<span class="dot"></span>Non connecté'}</div>
+        ${c.connected && c.models?.length > 1 ? `<select data-model="${id}" aria-label="Modèle ${esc(c.name)}">${c.models.map((m) => `<option ${m === c.model ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>` : c.model ? `<div class="pv-state">${esc(c.model)}</div>` : ''}
+      </div>
+      <div class="btn-row">${c.connected ? `<button class="btn ghost sm" data-action="disconnect" data-id="${id}">Déconnecter</button>` : `<button class="btn sm${local ? ' ghost' : ' primary'}" data-action="connect" data-id="${id}">${local ? 'Utiliser une clé' : 'Connecter'}</button>`}</div>
+    </div>`;
+  }).join('')}</div>
+  <p class="muted" style="margin:10px 0 0;font-size:13px">Claude fait travailler les agents et l'assistant. ChatGPT et Gemini peuvent remplacer Claude pour discuter avec l'assistant (en haut de la page Assistant).</p>`;
+}
+function openConnect(id) {
+  const c = S.connections?.[id];
+  if (!c) return;
+  const dlg = $('#settings');
+  dlg.innerHTML = `<form method="dialog" data-form="connect" data-id="${id}" class="connect">
+    <div class="dlg-head"><h2>Connecter ${esc(c.name)}</h2><button class="btn ghost icon sm" value="cancel" aria-label="Fermer">${icon('x')}</button></div>
+    <div class="dlg-body">
+      <ol class="steps">
+        ${HOWTO[id].map((t, i) => `<li><span class="n">${i + 1}</span><div><span>${t}</span>${i === 0 ? `<div><a class="btn sm" href="${esc(c.keyUrl)}" target="_blank" rel="noopener">${icon('web')}Ouvrir la page ${esc(c.company)}</a></div>` : ''}</div></li>`).join('')}
+        <li><span class="n">${HOWTO[id].length + 1}</span><div><span>Colle ta clé ici :</span>
+          <input type="password" name="key" autocomplete="off" spellcheck="false" placeholder="${id === 'anthropic' ? 'sk-ant-…' : id === 'openai' ? 'sk-…' : 'AIza…'}" required>
+          <div class="help" data-detect></div></div></li>
+      </ol>
+    </div>
+    <div class="dlg-foot"><button class="btn ghost" value="cancel">Annuler</button><button class="btn primary" value="default" data-action="connect-save">Connecter</button></div>
+  </form>`;
+  dlg.showModal();
+  dlg.querySelector('input[name="key"]').focus();
+}
+const KEY_SHAPES = { anthropic: /^sk-ant-/, openai: /^sk-(?!ant-)/, google: /^AIza/ };
+document.addEventListener('input', (e) => {
+  if (!e.target.matches?.('form[data-form="connect"] input[name="key"]')) return;
+  const v = e.target.value.trim();
+  const found = Object.keys(KEY_SHAPES).find((k) => KEY_SHAPES[k].test(v));
+  const want = e.target.form.dataset.id;
+  const out = e.target.form.querySelector('[data-detect]');
+  out.textContent = !v ? '' : found === want ? `Clé ${S.connections[want].name} reconnue.` : found ? `On dirait une clé ${S.connections[found].name} : elle sera rangée au bon endroit.` : 'Forme de clé inconnue, vérifie le copier-coller.';
+});
+async function saveConnect(form) {
+  const key = new FormData(form).get('key');
+  const btn = form.querySelector('[data-action="connect-save"]');
+  btn.disabled = true;
+  btn.textContent = 'Vérification…';
+  const r = await act('POST', '/api/connections', { key });
+  btn.disabled = false;
+  btn.textContent = 'Connecter';
+  if (r) {
+    form.closest('dialog').close();
+    toast({ title: `${r.name} est connecté`, body: r.model ? `Modèle : ${r.model}` : '', kind: 'success' });
+  }
+}
+// Cerveau de l'assistant : Claude (avec ses outils) ou une autre IA connectée, pour discuter.
+function renderBrain() {
+  const others = ['openai', 'google'].filter((id) => S.connections?.[id]?.connected);
+  if (!others.length) return '';
+  const cur = S.config?.assistant?.provider || 'claude';
+  const opts = [['claude', 'Claude'], ...others.map((id) => [id, S.connections[id].name])];
+  return `<div class="seg" role="group" aria-label="Cerveau de l'assistant">${opts.map(([id, name]) => `<button class="${cur === id || (id === 'claude' && !others.includes(cur)) ? 'on' : ''}" data-action="brain" data-id="${id}" aria-pressed="${cur === id}">${esc(name)}</button>`).join('')}</div>`;
+}
 function toAssistant(text, send = false) {
   if (send) { go('/assistant'); sendAssistant(text); return; }
   drafts.assistant = text;
@@ -825,6 +901,8 @@ function toAssistant(text, send = false) {
   requestAnimationFrame(() => { const ta = $('.chat-input textarea'); if (ta) { ta.value = text; ta.focus(); ta.setSelectionRange(text.length, text.length); autosize(ta); } });
 }
 document.addEventListener('change', async (e) => {
+  const sel = e.target.closest?.('select[data-model]');
+  if (sel) { act('PUT', `/api/connections/${sel.dataset.model}`, { model: sel.value }, 'Modèle changé'); return; }
   const input = e.target.closest?.('input[data-import="claude"]');
   if (!input?.files?.[0]) return;
   const file = input.files[0];
@@ -1243,6 +1321,7 @@ function connect() {
     S.assistant = d.assistant;
     S.config = d.config;
     S.claude = d.claude;
+    S.connections = d.connections;
     S.fake = d.fake;
     if (R.sid) loadLog(R.pid, R.sid);
     render();
@@ -1280,6 +1359,7 @@ function connect() {
   });
   es.addEventListener('assistant-status', (e) => { Object.assign(S.assistant, JSON.parse(e.data)); render(); });
   es.addEventListener('assistant-reset', (e) => { S.assistant = JSON.parse(e.data); render(); });
+  es.addEventListener('connections', (e) => { S.connections = JSON.parse(e.data); render(); });
   es.addEventListener('claude-sync', (e) => { S.account = { ...(S.account || {}), ...JSON.parse(e.data) }; render(); });
   es.addEventListener('config', (e) => { S.config = JSON.parse(e.data); S.assistant.routines = S.config.routines; render(); });
   es.addEventListener('notify', (e) => onNotify(JSON.parse(e.data)));
@@ -1347,6 +1427,14 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'suggest': sendAssistant(t.dataset.text); break;
+    case 'connect': openConnect(t.dataset.id); break;
+    case 'connect-save': e.preventDefault(); saveConnect(t.closest('form')); break;
+    case 'disconnect': {
+      const c = S.connections?.[t.dataset.id];
+      if (c && confirm(`Déconnecter ${c.name} ? Sa clé sera effacée de ce Mac.`)) act('DELETE', `/api/connections/${t.dataset.id}`, null, `${c.name} déconnecté`);
+      break;
+    }
+    case 'brain': act('PUT', '/api/config', { assistant: { provider: t.dataset.id } }); break;
     case 'claude-fetch': if (S.account) S.account.fetching = true; render(); act('POST', '/api/claude/routines/fetch'); break;
     case 'claude-copy': if (await act('POST', `/api/claude/routines/${encodeURIComponent(t.dataset.id)}/copy`, null, 'Routine copiée dans Chlamyd.I.A.')) render(); break;
     case 'claude-routine-read': toAssistant(`Lis-moi le dernier résultat de ma routine claude.ai « ${t.dataset.name} » (${t.dataset.id}).`, true); break;
@@ -1400,6 +1488,7 @@ document.addEventListener('submit', async (e) => {
   if (!form) return;
   e.preventDefault();
   const kind = form.dataset.form;
+  if (kind === 'connect') return saveConnect(form);
   const ta = form.querySelector('textarea');
   const text = ta?.value.trim();
   const clear = () => { if (ta) { delete drafts[ta.dataset.key]; ta.value = ''; autosize(ta); } };
@@ -1444,6 +1533,15 @@ function sendAssistant(text, { voice = false } = {}) {
   render();
   act('POST', '/api/assistant', voice ? { text, voice: true } : { text });
 }
+
+// Halo lumineux qui suit la souris sur les panneaux en verre.
+document.addEventListener('pointermove', (e) => {
+  const el = e.target.closest?.('.panel, .node, .provider, .ask');
+  if (!el) return;
+  const r = el.getBoundingClientRect();
+  el.style.setProperty('--mx', `${e.clientX - r.left}px`);
+  el.style.setProperty('--my', `${e.clientY - r.top}px`);
+}, { passive: true });
 
 // Rafraîchit les durées affichées.
 setInterval(() => { if (S.order.some((id) => S.projects.get(id)?.totals.running)) render(); }, 15_000);

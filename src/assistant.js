@@ -11,6 +11,7 @@ import { manager } from './manager.js';
 import { listSkills, listScheduledTasks, readSkillContent, isReadOnlyCall } from './claude-account.js';
 import { listClaudeProjects, readClaudeProject, searchClaudeProjects, getClaudeRoutines } from './claude-sync.js';
 import { paths, readJSON, writeJSON, ensureDir } from './paths.js';
+import { PROVIDERS, chat } from './providers.js';
 
 const HISTORY = path.join(paths.assistantDir, 'history.json');
 const MEMORY = path.join(paths.assistantDir, 'MEMOIRE.md');
@@ -92,8 +93,9 @@ class Assistant {
       const cfg = getConfig();
       let reply = '';
       const tools = [];
+      const provider = cfg.assistant?.provider && cfg.assistant.provider !== 'claude' ? cfg.assistant.provider : null;
       try {
-        const r = await runAgent({
+        const r = provider ? await this.chatOther(provider, { routine, voice }) : await runAgent({
           cwd: paths.assistantDir,
           prompt: routine ? `[Routine programmée « ${routine} »]\n${text}` : voice ? `${VOICE_HINT}\n${text}` : text,
           resume: this.data.sessionId || undefined,
@@ -130,7 +132,7 @@ class Assistant {
         if (r.sessionId) this.data.sessionId = r.sessionId;
         this.data.cost = (this.data.cost || 0) + (r.cost || 0);
         const finalText = r.ok ? r.text || reply : r.aborted ? `${reply}\n\n_(arrêté)_`.trim() : `⚠️ ${r.text}`;
-        this.push({ role: 'assistant', text: finalText, tools, routine, cost: r.cost, ...(voice ? { voice: true } : {}) });
+        this.push({ role: 'assistant', text: finalText, tools, routine, cost: r.cost, ...(provider ? { provider } : {}), ...(voice ? { voice: true } : {}) });
         if (routine) notify({ title: `Routine « ${routine} »`, body: finalText.replace(/[#*_`>]/g, '').slice(0, 180), kind: 'info' });
         else notify({ title: 'Assistant', body: finalText.replace(/[#*_`>]/g, '').slice(0, 180), kind: 'assistant' });
       } catch (e) {
@@ -141,6 +143,34 @@ class Assistant {
       this.abort = null;
       this.status();
     }
+  }
+
+  /** Tour de conversation avec ChatGPT ou Gemini : pas d'outils, mais le contexte utile dans la consigne. */
+  async chatOther(provider, { routine, voice }) {
+    const history = this.data.messages.filter((m) => (m.role === 'user' || m.role === 'assistant') && m.text).slice(-30);
+    const last = history.at(-1);
+    const messages = history.map((m) => ({ role: m.role, text: m === last ? (routine ? `[Routine programmée « ${routine} »]\n${m.text}` : voice ? `${VOICE_HINT}\n${m.text}` : m.text) : m.text }));
+    try {
+      const text = await chat(provider, { system: await this.systemOther(provider), messages, signal: this.abort.signal });
+      return { ok: true, text, cost: 0 };
+    } catch (e) {
+      if (this.abort?.signal.aborted) return { ok: false, aborted: true, text: 'Arrêté.', cost: 0 };
+      return { ok: false, text: e.message, cost: 0 };
+    }
+  }
+
+  async systemOther(provider) {
+    const memory = fs.existsSync(MEMORY) ? fs.readFileSync(MEMORY, 'utf8').slice(0, 6000) : '';
+    const now = new Date().toLocaleString('fr-FR', { dateStyle: 'full', timeStyle: 'short' });
+    const status = await this.tools().find((t) => t.name === 'projects_status').handler({});
+    return [
+      `# Tu t'appelles Chlamyd.I.A. : tu es l'assistant personnel de l'utilisateur, sur son Mac (propulsé ici par ${PROVIDERS[provider].name}).`,
+      `Nous sommes le ${now}. Réponds en français, en le tutoyant, de façon directe et concise, en Markdown léger.`,
+      "Chlamyd.I.A. orchestre des agents Claude Code sur ses projets de code. Dans ce mode, tu n'as pas d'outils : tu ne peux ni lancer ou mettre en pause un projet, ni lire ses mails, routines ou fichiers. Si on te le demande, dis-lui de choisir Claude comme cerveau de l'assistant (en haut de la page Assistant).",
+      `\n## État de ses projets\n${status}`,
+      `\n## Ses routines Chlamyd.I.A.\n${JSON.stringify((getConfig().routines || []).map((r) => ({ nom: r.name, heure: r.time, consigne: r.prompt })))}`,
+      memory ? `\n## Ce que tu sais de lui\n${memory}` : '',
+    ].join('\n');
   }
 
   systemAppend() {

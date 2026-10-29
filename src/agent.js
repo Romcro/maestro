@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { z } from 'zod';
 import { inbox } from './inbox.js';
 import { getConfig } from './config.js';
+import { claudeEnv } from './providers.js';
 
 const FAKE = process.env.MAESTRO_FAKE === '1';
 
@@ -195,6 +196,8 @@ export async function runAgent(o) {
     settingSources: o.settingSources || ['user', 'project', 'local'],
     systemPrompt: { type: 'preset', preset: 'claude_code', append: o.systemAppend || '' },
     ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
+    // Clé API Claude collée dans Connexions : prioritaire sur la connexion Claude Code de ce Mac.
+    ...(claudeEnv() ? { env: claudeEnv() } : {}),
     stderr: (d) => {
       if (/error/i.test(d)) emit({ type: 'stderr', text: trunc(d, 400) });
     },
@@ -259,7 +262,7 @@ export async function runAgent(o) {
 function apiErrorLabel(code) {
   return (
     {
-      authentication_failed: "Claude Code n'est pas connecté. Lance `claude` une fois dans un terminal et connecte-toi.",
+      authentication_failed: "Claude n'est pas connecté. Ouvre la page Connexions de Chlamyd.I.A. et colle ta clé Claude.",
       rate_limit: 'Limite d\'utilisation atteinte. Réessaie plus tard ou baisse le nombre d\'agents en parallèle.',
       billing_error: 'Problème de facturation sur ton compte.',
       overloaded: 'Serveurs surchargés, nouvelle tentative…',
@@ -270,7 +273,7 @@ function apiErrorLabel(code) {
 function friendlyError(err) {
   const m = String(err?.message || err);
   if (/ENOENT|spawn/.test(m)) return `Impossible de lancer Claude Code (${trunc(m, 160)}). Vérifie que \`claude\` est installé.`;
-  if (/auth|login|401/i.test(m)) return "Claude Code n'est pas connecté. Lance `claude` une fois dans un terminal et connecte-toi.";
+  if (/auth|login|401/i.test(m)) return "Claude n'est pas connecté. Ouvre la page Connexions de Chlamyd.I.A. et colle ta clé Claude.";
   return trunc(m, 400);
 }
 
