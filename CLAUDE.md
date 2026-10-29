@@ -21,6 +21,8 @@ src/assistant.js   Conversation assistant, mémoire (MEMOIRE.md), routines à he
 src/claude-account.js  Compte Claude en lecture (~/.claude) : skills, plugins, tâches planifiées ; lecture MCP sans autorisation
 src/claude-sync.js Projets claude.ai (import de l'export de données) et routines claude.ai (RemoteTrigger) → ~/.maestro/claude/
 src/providers.js   Connexions Claude / ChatGPT / Gemini / modèle local (Ollama, sans clé) : clé collée, vérifiée, rangée dans ~/.maestro/keys.json (600) ; chat simple ChatGPT/Gemini
+src/explain.js     Explication en français simple de chaque demande d'autorisation (commande, fichier, service) + niveau de risque, sans IA
+src/local-tools.js Outils fichiers du modèle local (Ollama tool calling) : libres dans son dossier, accord via « À traiter » ailleurs, jamais de suppression
 src/config.js      Réglages (~/.maestro/config.json), commandes autorisées par défaut
 public/            Tableau de bord sans étape de build : index.html, app.js, styles.css, sw.js
 test/run-tests.js  Tests de bout en bout en mode simulé (npm test)

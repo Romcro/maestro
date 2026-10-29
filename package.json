@@ -1,6 +1,6 @@
 {
   "name": "maestro-agents",
-  "version": "1.7.0",
+  "version": "1.8.0",
   "description": "Chef d'orchestre local pour agents Claude Code : un PLAN.md, des agents en parallèle, un tableau de bord et des notifications macOS.",
   "type": "module",
   "bin": {

@@ -418,6 +418,28 @@ textarea { resize: vertical; min-height: 44px; line-height: 1.45; }
   font-size: 12.8px;
   line-height: 1.5;
 }
+.explain {
+  --r: var(--sage);
+  --r-soft: var(--sage-soft);
+  border-radius: var(--radius-ctl);
+  background: var(--r-soft);
+  border: 1px solid color-mix(in srgb, var(--r) 35%, transparent);
+  padding: 10px 14px 12px;
+  display: grid;
+  gap: 4px;
+}
+.explain.r-change { --r: var(--amber); --r-soft: var(--amber-soft); }
+.explain.r-danger { --r: var(--red); --r-soft: var(--red-soft); }
+.explain-head { display: flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; color: var(--r); letter-spacing: 0.01em; }
+.risk-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--r); box-shadow: 0 0 10px var(--r); flex: none; }
+.explain-title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--ink-3); margin-top: 4px; }
+.explain ol { margin: 0; padding-left: 20px; color: var(--ink); font-size: 15px; line-height: 1.5; }
+.explain ol li + li { margin-top: 2px; }
+.explain-warn { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 3px; font-size: 13.5px; color: var(--ink-2); }
+.explain-warn li::before { content: '⚠ '; color: var(--r); }
+.ask details.raw summary { cursor: pointer; color: var(--ink-3); font-size: 13px; padding: 2px 0; }
+.ask details.raw summary:hover { color: var(--ink-2); }
+.ask details.raw[open] summary { margin-bottom: 6px; }
 .ask .answer { display: flex; gap: 8px; }
 .ask .answer textarea { min-height: 38px; height: 38px; }
 .choices { display: flex; flex-wrap: wrap; gap: 6px; }

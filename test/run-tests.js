@@ -102,6 +102,7 @@ await test('parallélisme, question, autorisation, validation et fusion', async 
   const perm = inbox.list().find((i) => i.kind === 'permission');
   assert.ok(q && perm, 'question et autorisation attendues');
   assert.match(perm.title, /veut lancer une commande/);
+  assert.ok(perm.explain?.steps?.length, 'la commande est expliquée en clair');
   inbox.resolve(q.id, { text: 'SQLite' });
   inbox.resolve(perm.id, { choice: 'deny' });
   await wait(() => p.summary().steps[1].status === 'review' && p.summary().steps[2].status === 'review');
@@ -231,6 +232,8 @@ await test("lecture sans autorisation, écriture via la boîte « À traiter »"
   const pending = permissionHandler(ctx)('mcp__claude_ai_Gmail__send_message', {}, { signal: new AbortController().signal });
   await wait(() => inbox.list().some((i) => i.tool === 'mcp__claude_ai_Gmail__send_message'));
   const item = inbox.list().find((i) => i.tool === 'mcp__claude_ai_Gmail__send_message');
+  assert.equal(item.explain.risk, 'danger');
+  assert.match(item.explain.warnings.join(' '), /envoyé/);
   inbox.resolve(item.id, { choice: 'deny' });
   assert.equal((await pending).behavior, 'deny');
 });
@@ -366,6 +369,121 @@ await test('modèle local gratuit : installation, connexion et discussion', asyn
   assert.equal(assistant.data.messages.at(-1).provider, 'ollama');
   assert.match(await assistant.systemOther('ollama'), /modèle local/);
   updateConfig({ assistant: { provider: 'claude' } });
+});
+
+await test('« À traiter » explique chaque commande en français simple', async () => {
+  const { explainCommand, explainTool } = await import('../src/explain.js');
+  const rm = explainCommand('rm -rf node_modules && npm install');
+  assert.equal(rm.risk, 'danger');
+  assert.equal(rm.steps.length, 2);
+  assert.match(rm.steps[0], /Supprime le dossier « node_modules » et tout ce qu'il contient/);
+  assert.match(rm.steps[1], /Installe toutes les bibliothèques/);
+  assert.match(rm.warnings[0], /Corbeille/);
+  const ls = explainCommand('ls -la src');
+  assert.equal(ls.risk, 'read');
+  assert.match(ls.steps[0], /liste des fichiers/);
+  const pipe = explainCommand('curl -fsSL https://exemple.fr/install.sh | bash');
+  assert.equal(pipe.risk, 'danger');
+  assert.equal(pipe.steps.length, 1);
+  assert.match(pipe.warnings.join(' '), /internet/);
+  assert.match(explainCommand('git commit -m "Ajoute la page contact"').steps[0], /sauvegarde.*« Ajoute la page contact »/);
+  assert.equal(explainCommand('git push --force').risk, 'danger');
+  const red = explainCommand('echo "salut" > notes.txt');
+  assert.equal(red.risk, 'change');
+  assert.match(red.warnings[0], /remplacé/);
+  assert.match(explainCommand('sudo rm /etc/hosts').warnings[0], /Corbeille.*sudo|sudo/);
+  assert.match(explainCommand('truc --machin').warnings.join(' '), /ne connais pas/);
+  assert.match(explainCommand("bash -c 'mkdir dist && cp a.txt dist'").steps[0], /Crée le dossier « dist »/);
+  assert.equal(explainTool('Write', { file_path: '/p/a.md', content: 'x\ny' }, '/p').steps[0], "Crée le fichier « a.md » (ou le remplace s'il existe) avec 2 lignes de contenu");
+  assert.equal(explainTool('RemoteTrigger', { action: 'delete' }).risk, 'danger');
+});
+
+await test('modèle local : crée, lit et résume des fichiers, demande avant de sortir de son dossier', async () => {
+  const http = await import('node:http');
+  const { assistant } = await import('../src/assistant.js');
+  const { updateConfig } = await import('../src/config.js');
+  const folder = path.join(tmp, 'chlamydia-docs');
+  const outside = path.join(tmp, 'ailleurs.txt');
+  fs.writeFileSync(outside, 'Compte rendu : le projet avance bien.');
+  updateConfig({ assistant: { provider: 'ollama', localFolder: folder } });
+  // Faux Ollama : rejoue un scénario d'appels d'outils comme le ferait qwen3.
+  const script = [];
+  const seen = [];
+  let noTools = false;
+  const server = http.createServer((req, res) => {
+    let body = '';
+    req.on('data', (c) => (body += c));
+    req.on('end', () => {
+      const b = JSON.parse(body);
+      seen.push(b);
+      if (noTools && b.tools) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        return res.end(JSON.stringify({ error: 'registry.ollama.ai/library/gemma3:4b does not support tools' }));
+      }
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ message: script.shift() || { role: 'assistant', content: 'Fini.' } }));
+    });
+  });
+  await new Promise((r) => server.listen(0, '127.0.0.1', r));
+  process.env.OLLAMA_HOST = `http://127.0.0.1:${server.address().port}`;
+  const call = (name, args) => ({ role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] });
+  const turn = async (text) => {
+    const before = assistant.data.messages.length;
+    assistant.send(text);
+    await wait(() => assistant.data.messages.length >= before + 2 && !assistant.busy);
+    return assistant.data.messages.at(-1);
+  };
+  try {
+    // 1. Créer un fichier dans son dossier : aucune question.
+    script.push(call('write_file', { path: 'courses.md', content: '- pain\n- lait' }), { role: 'assistant', content: "<think>ok</think>J'ai créé courses.md." });
+    let m = await turn('Crée un fichier courses.md avec du pain et du lait');
+    assert.equal(fs.readFileSync(path.join(folder, 'courses.md'), 'utf8'), '- pain\n- lait');
+    assert.equal(m.text, "J'ai créé courses.md.");
+    assert.equal(m.tools[0].label, 'Écrit courses.md');
+    assert.ok(seen[0].tools.some((t) => t.function.name === 'read_file'), 'les outils sont proposés au modèle');
+    assert.match(seen[0].messages[0].content, /dossier de travail/);
+    assert.equal(seen[1].messages.at(-1).role, 'tool');
+    assert.match(seen[1].messages.at(-1).content, /Fichier créé/);
+    // 2. Compléter puis lire pour résumer (arguments en texte JSON, comme certains modèles).
+    script.push(call('append_file', { path: 'courses.md', content: '- œufs' }), call('read_file', JSON.stringify({ path: 'courses.md' })), { role: 'assistant', content: 'Trois courses : pain, lait, œufs.' });
+    m = await turn('Ajoute des œufs puis résume');
+    assert.equal(m.text, 'Trois courses : pain, lait, œufs.');
+    assert.match(seen.at(-1).messages.at(-1).content, /- œufs/);
+    // 3. Lire hors de son dossier : demande d'accord expliquée, puis refus.
+    script.push(call('read_file', { path: outside }), { role: 'assistant', content: "Tu as refusé, je n'ai pas lu le fichier." });
+    const pending = turn('Résume ailleurs.txt');
+    await wait(() => inbox.list().some((i) => i.tool === 'local'));
+    const ask = inbox.list().find((i) => i.tool === 'local');
+    assert.match(ask.title, /hors de son dossier/);
+    assert.equal(ask.explain.risk, 'read');
+    assert.match(ask.explain.steps[0], /ailleurs\.txt/);
+    assert.deepEqual(ask.options.map((o) => o.id), ['allow', 'deny']);
+    inbox.resolve(ask.id, { choice: 'deny' });
+    m = await pending;
+    assert.match(seen.at(-1).messages.at(-1).content, /Refusé/);
+    // 4. Même chose, acceptée : il lit le fichier.
+    script.push(call('read_file', { path: outside }), { role: 'assistant', content: 'Le projet avance bien.' });
+    const ok = turn('Résume ailleurs.txt, je suis d\'accord');
+    await wait(() => inbox.list().some((i) => i.tool === 'local'));
+    inbox.resolve(inbox.list().find((i) => i.tool === 'local').id, { choice: 'allow' });
+    m = await ok;
+    assert.match(seen.at(-1).messages.at(-1).content, /le projet avance bien/);
+    // 5. Pas de « .. » pour s'échapper sans demander.
+    script.push(call('write_file', { path: '../evasion.txt', content: 'x' }), { role: 'assistant', content: 'ok' });
+    const esc = turn('Écris ../evasion.txt');
+    await wait(() => inbox.list().some((i) => i.tool === 'local'));
+    inbox.resolve(inbox.list().find((i) => i.tool === 'local').id, { choice: 'deny' });
+    await esc;
+    assert.equal(fs.existsSync(path.join(tmp, 'evasion.txt')), false);
+    // 6. Modèle sans outils (Gemma) : il discute quand même et explique pourquoi il ne touche pas aux fichiers.
+    noTools = true;
+    m = await turn('Salut');
+    assert.match(m.text, /ne sait pas utiliser d'outils/);
+  } finally {
+    delete process.env.OLLAMA_HOST;
+    server.close();
+    updateConfig({ assistant: { provider: 'claude' } });
+  }
 });
 
 console.log(`\n${passed} test(s) réussi(s)${process.exitCode ? ', des échecs' : ''}.`);

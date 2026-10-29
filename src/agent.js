@@ -5,6 +5,7 @@ import { z } from 'zod';
 import { inbox } from './inbox.js';
 import { getConfig } from './config.js';
 import { claudeEnv } from './providers.js';
+import { explainTool } from './explain.js';
 
 const FAKE = process.env.MAESTRO_FAKE === '1';
 
@@ -69,15 +70,17 @@ export function permissionHandler(ctx) {
       : isFile ? (blockedPath ? 'veut modifier un fichier hors de son dossier' : 'veut modifier un fichier')
       : toolName === 'WebFetch' || toolName === 'WebSearch' ? 'veut accéder au web'
       : `veut utiliser ${d.label}`;
+    const explain = explainTool(toolName, input, ctx.cwd);
     const answer = await inbox.add(
       {
         kind: 'permission',
         projectId: ctx.projectId,
         stepId: ctx.stepId,
         title: `${ctx.label} ${verb}`,
-        notifyBody: `${d.label}`,
-        detail: [toolName === 'Bash' ? d.detail : d.label, blockedPath && !isFile ? `Chemin hors de son dossier : ${blockedPath}` : null].filter(Boolean).join(' — '),
+        notifyBody: explain.steps.join(', puis '),
+        detail: [toolName === 'Bash' && d.detail ? `L'agent précise : ${d.detail}` : null, blockedPath && !isFile ? `Chemin hors de son dossier : ${blockedPath}` : null].filter(Boolean).join(' — '),
         tool: toolName,
+        explain,
         preview: toolName === 'Bash' ? input.command : toolName === 'Write' ? trunc(input.content, 1200) : toolName === 'Edit' ? `${trunc(input.old_string, 500)}\n→\n${trunc(input.new_string, 500)}` : JSON.stringify(input, null, 2).slice(0, 1200),
         options: [
           { id: 'allow', label: 'Autoriser' },
