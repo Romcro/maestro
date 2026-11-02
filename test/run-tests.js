@@ -311,66 +311,7 @@ await test("l'assistant lit les projets claude.ai importés", async () => {
   assert.match(assistant.systemAppend(), /claude_projects/);
 });
 
-console.log('Connexions');
-await test('reconnaît, vérifie et range les clés sans jamais les exposer', async () => {
-  const { detectProvider, connect, publicInfo, getKey, claudeEnv, disconnect, pickModel } = await import('../src/providers.js');
-  assert.equal(detectProvider('sk-ant-api03-abcdefghijklmnopqrstuvwxyz'), 'anthropic');
-  assert.equal(detectProvider('sk-proj-abcdefghijklmnopqrstuvwxyz'), 'openai');
-  assert.equal(detectProvider('AIzaSyAbcdefghijklmnopqrstuvwxyz0123456'), 'google');
-  assert.equal(detectProvider('bonjour'), null);
-  await assert.rejects(() => connect('bonjour'), /reconnais pas/);
-  const info = await connect('  "sk-proj-abcdefghijklmnopqrstuvwxyz1234"  ');
-  assert.equal(info.id, 'openai');
-  assert.equal(info.connected, true);
-  assert.equal(info.hint, '…1234');
-  assert.ok(!JSON.stringify(publicInfo()).includes('abcdefghij'), 'la clé ne sort pas du serveur');
-  assert.equal(getKey('openai'), 'sk-proj-abcdefghijklmnopqrstuvwxyz1234');
-  const mode = fs.statSync(path.join(process.env.MAESTRO_HOME, 'keys.json')).mode & 0o777;
-  assert.equal(mode, 0o600, 'fichier lisible par toi seul');
-  assert.equal(claudeEnv(), undefined, 'sans clé Claude, on garde la connexion Claude Code');
-  await connect('sk-ant-api03-abcdefghijklmnopqrstuvwxyz');
-  assert.equal(claudeEnv().ANTHROPIC_API_KEY, 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz');
-  disconnect('anthropic');
-  assert.equal(claudeEnv(), undefined);
-  assert.equal(pickModel('openai', ['gpt-4o', 'gpt-5-mini', 'gpt-5', 'gpt-4o-audio-preview']), 'gpt-5');
-  assert.equal(pickModel('google', ['gemini-2.0-flash', 'gemini-2.5-pro', 'gemini-2.5-flash-lite']), 'gemini-2.5-pro');
-});
-await test("l'assistant peut discuter avec ChatGPT à la place de Claude", async () => {
-  const { assistant } = await import('../src/assistant.js');
-  const { updateConfig } = await import('../src/config.js');
-  updateConfig({ assistant: { provider: 'openai' } });
-  const before = assistant.data.messages.length;
-  assistant.send('Bonjour toi');
-  await wait(() => assistant.data.messages.length >= before + 2 && !assistant.busy);
-  const a = assistant.data.messages.at(-1);
-  assert.equal(a.provider, 'openai');
-  assert.match(a.text, /simulation ChatGPT/);
-  assert.match(await assistant.systemOther('openai'), /propulsé ici par ChatGPT/);
-  updateConfig({ assistant: { provider: 'claude' } });
-});
-
-await test('modèle local gratuit : installation, connexion et discussion', async () => {
-  const { connectLocal, pullLocalModel, publicInfo, LOCAL_MODELS } = await import('../src/providers.js');
-  const { assistant } = await import('../src/assistant.js');
-  const { updateConfig } = await import('../src/config.js');
-  await assert.rejects(() => connectLocal(), /aucun modèle/);
-  await assert.rejects(() => pullLocalModel('rm -rf /'), /invalide/);
-  const steps = [];
-  const info = await pullLocalModel(LOCAL_MODELS[1].id, (p) => steps.push(p.percent));
-  assert.deepEqual(steps, [0, 40, 100]);
-  assert.equal(info.connected, true);
-  assert.equal(info.local, true);
-  assert.equal(info.hint, null, 'pas de clé pour le local');
-  assert.equal(publicInfo().ollama.model, 'gemma3:4b');
-  updateConfig({ assistant: { provider: 'ollama' } });
-  const before = assistant.data.messages.length;
-  assistant.send('Salut');
-  await wait(() => assistant.data.messages.length >= before + 2 && !assistant.busy);
-  assert.equal(assistant.data.messages.at(-1).provider, 'ollama');
-  assert.match(await assistant.systemOther('ollama'), /modèle local/);
-  updateConfig({ assistant: { provider: 'claude' } });
-});
-
+console.log('Compte Claude et autorisations');
 await test('« À traiter » explique chaque commande en français simple', async () => {
   const { explainCommand, explainTool } = await import('../src/explain.js');
   const rm = explainCommand('rm -rf node_modules && npm install');
@@ -398,105 +339,32 @@ await test('« À traiter » explique chaque commande en français simple', asyn
   assert.equal(explainTool('RemoteTrigger', { action: 'delete' }).risk, 'danger');
 });
 
-await test('modèle local : crée, lit et résume des fichiers, demande avant de sortir de son dossier', async () => {
-  const http = await import('node:http');
-  const { assistant } = await import('../src/assistant.js');
-  const { updateConfig } = await import('../src/config.js');
-  const folder = path.join(tmp, 'chlamydia-docs');
-  const outside = path.join(tmp, 'ailleurs.txt');
-  fs.writeFileSync(outside, 'Compte rendu : le projet avance bien.');
-  updateConfig({ assistant: { provider: 'ollama', localFolder: folder } });
-  // Faux Ollama : rejoue un scénario d'appels d'outils comme le ferait qwen3.
-  const script = [];
-  const seen = [];
-  let noTools = false;
-  const server = http.createServer((req, res) => {
-    let body = '';
-    req.on('data', (c) => (body += c));
-    req.on('end', () => {
-      const b = JSON.parse(body);
-      seen.push(b);
-      if (noTools && b.tools) {
-        res.writeHead(400, { 'Content-Type': 'application/json' });
-        return res.end(JSON.stringify({ error: 'registry.ollama.ai/library/gemma3:4b does not support tools' }));
-      }
-      res.writeHead(200, { 'Content-Type': 'application/json' });
-      res.end(JSON.stringify({ message: script.shift() || { role: 'assistant', content: 'Fini.' } }));
-    });
-  });
-  await new Promise((r) => server.listen(0, '127.0.0.1', r));
-  process.env.OLLAMA_HOST = `http://127.0.0.1:${server.address().port}`;
-  const call = (name, args) => ({ role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] });
-  const turn = async (text) => {
-    const before = assistant.data.messages.length;
-    assistant.send(text);
-    await wait(() => assistant.data.messages.length >= before + 2 && !assistant.busy);
-    return assistant.data.messages.at(-1);
-  };
-  try {
-    // 1. Créer un fichier dans son dossier : aucune question.
-    script.push(call('write_file', { path: 'courses.md', content: '- pain\n- lait' }), { role: 'assistant', content: "<think>ok</think>J'ai créé courses.md." });
-    let m = await turn('Crée un fichier courses.md avec du pain et du lait');
-    assert.equal(fs.readFileSync(path.join(folder, 'courses.md'), 'utf8'), '- pain\n- lait');
-    assert.equal(m.text, "J'ai créé courses.md.");
-    assert.equal(m.tools[0].label, 'Écrit courses.md');
-    assert.ok(seen[0].tools.some((t) => t.function.name === 'read_file'), 'les outils sont proposés au modèle');
-    assert.match(seen[0].messages[0].content, /dossier de travail/);
-    assert.equal(seen[1].messages.at(-1).role, 'tool');
-    assert.match(seen[1].messages.at(-1).content, /Fichier créé/);
-    // 2. Compléter puis lire pour résumer (arguments en texte JSON, comme certains modèles).
-    script.push(call('append_file', { path: 'courses.md', content: '- œufs' }), call('read_file', JSON.stringify({ path: 'courses.md' })), { role: 'assistant', content: 'Trois courses : pain, lait, œufs.' });
-    m = await turn('Ajoute des œufs puis résume');
-    assert.equal(m.text, 'Trois courses : pain, lait, œufs.');
-    assert.match(seen.at(-1).messages.at(-1).content, /- œufs/);
-    // 3. Lire hors de son dossier : demande d'accord expliquée, puis refus.
-    script.push(call('read_file', { path: outside }), { role: 'assistant', content: "Tu as refusé, je n'ai pas lu le fichier." });
-    const pending = turn('Résume ailleurs.txt');
-    await wait(() => inbox.list().some((i) => i.tool === 'local'));
-    const ask = inbox.list().find((i) => i.tool === 'local');
-    assert.match(ask.title, /hors de son dossier/);
-    assert.equal(ask.explain.risk, 'read');
-    assert.match(ask.explain.steps[0], /ailleurs\.txt/);
-    assert.deepEqual(ask.options.map((o) => o.id), ['allow', 'deny']);
-    inbox.resolve(ask.id, { choice: 'deny' });
-    m = await pending;
-    assert.match(seen.at(-1).messages.at(-1).content, /Refusé/);
-    // 4. Même chose, acceptée : il lit le fichier.
-    script.push(call('read_file', { path: outside }), { role: 'assistant', content: 'Le projet avance bien.' });
-    const ok = turn('Résume ailleurs.txt, je suis d\'accord');
-    await wait(() => inbox.list().some((i) => i.tool === 'local'));
-    inbox.resolve(inbox.list().find((i) => i.tool === 'local').id, { choice: 'allow' });
-    m = await ok;
-    assert.match(seen.at(-1).messages.at(-1).content, /le projet avance bien/);
-    // 5. Pas de « .. » pour s'échapper sans demander.
-    script.push(call('write_file', { path: '../evasion.txt', content: 'x' }), { role: 'assistant', content: 'ok' });
-    const esc = turn('Écris ../evasion.txt');
-    await wait(() => inbox.list().some((i) => i.tool === 'local'));
-    inbox.resolve(inbox.list().find((i) => i.tool === 'local').id, { choice: 'deny' });
-    await esc;
-    assert.equal(fs.existsSync(path.join(tmp, 'evasion.txt')), false);
-    // 6. Modèle sans outils (Gemma) : il discute quand même et explique pourquoi il ne touche pas aux fichiers.
-    noTools = true;
-    m = await turn('Salut');
-    assert.match(m.text, /ne sait pas utiliser d'outils/);
-  } finally {
-    delete process.env.OLLAMA_HOST;
-    server.close();
-    updateConfig({ assistant: { provider: 'claude' } });
-  }
+await test('crédit épuisé : explique comment revenir à ton abonnement', async () => {
+  const { friendlyError } = await import('../src/agent.js');
+  const m = friendlyError(new Error('Claude Code returned an error result: Credit balance is too low'));
+  assert.match(m, /abonnement Claude/);
+  assert.match(m, /\/login/);
+  assert.doesNotMatch(m, /Credit balance/);
+  process.env.ANTHROPIC_API_KEY = 'sk-ant-test';
+  assert.match(friendlyError('Credit balance is too low'), /ANTHROPIC_API_KEY définie dans ton terminal/);
+  delete process.env.ANTHROPIC_API_KEY;
+  assert.equal(friendlyError('autre souci'), 'autre souci');
 });
 
-await test('crédit épuisé : explique quoi faire au lieu du message brut', async () => {
-  const { friendlyError } = await import('../src/agent.js');
-  const { connect, disconnect } = await import('../src/providers.js');
-  const m = friendlyError(new Error('Claude Code returned an error result: Credit balance is too low'));
-  assert.match(m, /Plus de crédit sur la clé API utilisée par Claude Code/);
-  assert.match(m, /abonnement Claude/);
-  assert.doesNotMatch(m, /Credit balance/);
-  await connect('sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123');
-  assert.match(friendlyError('Credit balance is too low'), /ta clé Claude enregistrée dans Connexions/);
-  disconnect('anthropic');
-  assert.equal(friendlyError('autre souci'), 'autre souci');
+await test('Compte Claude : reconnaît la connexion de Claude Code sans lire de jeton', async () => {
+  const { claudeLogin } = await import('../src/claude-account.js');
+  const dir = path.join(tmp, 'claude-login');
+  fs.mkdirSync(dir, { recursive: true });
+  const prev = process.env.CLAUDE_CONFIG_DIR;
+  process.env.CLAUDE_CONFIG_DIR = dir;
+  try {
+    assert.equal(claudeLogin(), null);
+    fs.writeFileSync(path.join(dir, '.claude.json'), JSON.stringify({ oauthAccount: { emailAddress: 'romu@exemple.fr', organizationName: 'Perso', accessToken: 'secret' } }));
+    assert.deepEqual(claudeLogin(), { email: 'romu@exemple.fr', organization: 'Perso' });
+  } finally {
+    if (prev === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+    else process.env.CLAUDE_CONFIG_DIR = prev;
+  }
 });
 
 console.log(`\n${passed} test(s) réussi(s)${process.exitCode ? ', des échecs' : ''}.`);

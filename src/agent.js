@@ -4,7 +4,6 @@ import fs from 'node:fs';
 import { z } from 'zod';
 import { inbox } from './inbox.js';
 import { getConfig } from './config.js';
-import { claudeEnv, getKey } from './providers.js';
 import { explainTool } from './explain.js';
 
 const FAKE = process.env.MAESTRO_FAKE === '1';
@@ -199,8 +198,6 @@ export async function runAgent(o) {
     settingSources: o.settingSources || ['user', 'project', 'local'],
     systemPrompt: { type: 'preset', preset: 'claude_code', append: o.systemAppend || '' },
     ...(claudePath ? { pathToClaudeCodeExecutable: claudePath } : {}),
-    // Clé API Claude collée dans Connexions : prioritaire sur la connexion Claude Code de ce Mac.
-    ...(claudeEnv() ? { env: claudeEnv() } : {}),
     stderr: (d) => {
       if (/error/i.test(d)) emit({ type: 'stderr', text: trunc(d, 400) });
     },
@@ -266,7 +263,7 @@ export async function runAgent(o) {
 function apiErrorLabel(code) {
   return (
     {
-      authentication_failed: "Claude n'est pas connecté. Ouvre la page Connexions de Chlamyd.I.A. et colle ta clé Claude.",
+      authentication_failed: "Claude Code n'est pas connecté à ton compte. Dans le Terminal, tape claude puis /login, et choisis ton compte Claude.",
       rate_limit: 'Limite d\'utilisation atteinte. Réessaie plus tard ou baisse le nombre d\'agents en parallèle.',
       billing_error: noCreditMessage(),
       overloaded: 'Serveurs surchargés, nouvelle tentative…',
@@ -274,21 +271,18 @@ function apiErrorLabel(code) {
   );
 }
 
-/** Plus de crédit : la clé API utilisée est vide. Avec un abonnement Claude, il suffit de ne pas utiliser de clé. */
+/** Plus de crédit : c'est une clé API (facturée à part) qui est utilisée, pas l'abonnement Claude. */
 export function noCreditMessage() {
-  const where = getKey('anthropic')
-    ? 'ta clé Claude enregistrée dans Connexions'
-    : process.env.ANTHROPIC_API_KEY
-      ? 'la clé ANTHROPIC_API_KEY définie dans ton terminal (fichier ~/.zshrc)'
-      : 'la clé API utilisée par Claude Code';
-  return `Plus de crédit sur ${where}. Si tu as un abonnement Claude (Pro ou Max), retire cette clé : Chlamyd.I.A. utilisera ta connexion Claude Code, comprise dans l'abonnement (au besoin, tape claude puis /login). Sinon, recharge des crédits sur console.anthropic.com, ou choisis le modèle local en haut de la page Assistant.`;
+  return process.env.ANTHROPIC_API_KEY
+    ? "Plus de crédit sur la clé ANTHROPIC_API_KEY définie dans ton terminal. Elle passe avant ton abonnement Claude : retire-la de ton fichier ~/.zshrc, puis redémarre Chlamyd.I.A. (maestro stop puis maestro). Il utilisera alors ton abonnement."
+    : "Plus de crédit sur la clé API utilisée par Claude Code. Pour utiliser ton abonnement Claude à la place, tape claude dans le Terminal, puis /login, et choisis ton compte Claude (pas la console API).";
 }
 
 export function friendlyError(err) {
   const m = String(err?.message || err);
   if (/credit balance|billing|insufficient.?credit|purchase credits/i.test(m)) return noCreditMessage();
   if (/ENOENT|spawn/.test(m)) return `Impossible de lancer Claude Code (${trunc(m, 160)}). Vérifie que \`claude\` est installé.`;
-  if (/auth|login|401/i.test(m)) return "Claude n'est pas connecté. Ouvre la page Connexions de Chlamyd.I.A. et colle ta clé Claude.";
+  if (/auth|login|401/i.test(m)) return "Claude Code n'est pas connecté à ton compte. Dans le Terminal, tape claude puis /login, et choisis ton compte Claude.";
   return trunc(m, 400);
 }
 
