@@ -282,7 +282,8 @@ export function friendlyError(err) {
   const m = String(err?.message || err);
   if (/credit balance|billing|insufficient.?credit|purchase credits/i.test(m)) return noCreditMessage();
   if (/ENOENT|spawn/.test(m)) return `Impossible de lancer Claude Code (${trunc(m, 160)}). Vérifie que \`claude\` est installé.`;
-  if (/auth|login|401/i.test(m)) return "Claude Code n'est pas connecté à ton compte. Dans le Terminal, tape claude puis /login, et choisis ton compte Claude.";
+  // Le message d'origine reste visible en petit : utile si ce n'est pas vraiment un souci de connexion.
+  if (/auth|login|401/i.test(m)) return `Claude Code n'est pas connecté à ton compte. Dans le Terminal, tape claude puis /login, et choisis ton compte Claude. (Détail : ${trunc(m.replace(/^Claude Code returned an error result:\s*/, ''), 160)})`;
   return trunc(m, 400);
 }
 
