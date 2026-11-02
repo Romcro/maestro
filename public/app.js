@@ -278,7 +278,7 @@ function renderSide() {
     <nav class="nav" aria-label="Navigation">
       <a class="nav-item" href="#/inbox"${cur('inbox')}>${icon('inbox')}<span>À traiter</span>${n ? `<span class="count">${n}</span>` : ''}</a>
       <a class="nav-item" href="#/assistant"${cur('assistant')}>${icon('chat')}<span>Assistant</span>${S.assistant.busy ? '<span class="dot on" style="margin-left:auto"></span>' : ''}</a>
-      <a class="nav-item" href="#/claude"${cur('claude')}>${icon('plug')}<span>Connexions</span>${Object.values(S.connections || {}).some((c) => c.connected) || S.claude ? '' : '<span class="count">!</span>'}${S.account?.fetching ? '<span class="dot on" style="margin-left:auto"></span>' : ''}</a>
+      <a class="nav-item" href="#/claude"${cur('claude')}>${icon('plug')}<span>Compte Claude</span>${S.login || S.fake ? '' : '<span class="count">!</span>'}${S.account?.fetching ? '<span class="dot on" style="margin-left:auto"></span>' : ''}</a>
       <button class="nav-item" data-action="voice" title="Raccourci : ⌥ M">${icon('mic')}<span>${V.state === 'listening' ? 'J\'écoute…' : 'Parler à Chlamyd.I.A.'}</span></button>
     </nav>
     <div class="nav-heading">Projets</div>
@@ -384,7 +384,7 @@ function renderProject(p) {
     );
   }
   for (const w of p.warnings || []) banners.push(banner('error', esc(w), '', 'warn'));
-  if (!S.claude && !S.fake && !S.connections?.anthropic?.connected) banners.push(banner('plug', "Connecte Claude pour que les agents puissent travailler : il suffit de coller ta clé, en une minute.", '<a class="btn sm" href="#/connexions">Connecter Claude</a>'));
+  if (!S.login && !S.fake) banners.push(banner('plug', "Connecte Claude Code à ton compte Claude pour que les agents puissent travailler.", '<a class="btn sm" href="#/claude">Voir comment</a>'));
 
   const attn = S.inbox.filter((i) => i.projectId === p.id);
   const head = `
@@ -547,7 +547,7 @@ function renderAsk(it, { inProject = false } = {}) {
   let actions = '';
   if (it.kind === 'permission') {
     const ex = it.explain;
-    const raw = it.tool === 'Bash' ? 'Voir la commande exacte' : it.tool === 'Write' || it.tool === 'local' ? 'Voir le contenu exact' : 'Voir le détail technique';
+    const raw = it.tool === 'Bash' ? 'Voir la commande exacte' : it.tool === 'Write' ? 'Voir le contenu exact' : 'Voir le détail technique';
     body = `${ex ? `<div class="explain r-${ex.risk}">
         <div class="explain-head"><span class="risk-dot"></span>${esc(RISK_LABEL[ex.risk] || '')}</div>
         <div class="explain-title">Ce que ça va faire</div>
@@ -734,15 +734,12 @@ async function loadLog(pid, sid) {
 function renderAssistant() {
   const a = S.assistant;
   const msgs = a.messages || [];
-  const suggestions = S.config?.assistant?.provider === 'ollama'
-    ? ['Crée un fichier courses.md avec une liste pour la semaine', 'Quels fichiers as-tu dans ton dossier ?', 'Résume-moi le fichier notes.md', 'Ajoute « appeler le garage » à la fin de todo.md']
-    : ['Où en sont mes projets ?', "Qu'est-ce qui m'attend aujourd'hui ?", 'Lis-moi ma dernière newsletter', 'Quelles sont mes routines Claude ?', 'Quels skills j\'ai ?', 'Programme un brief chaque matin à 8 h 30'];
+  const suggestions = ['Où en sont mes projets ?', "Qu'est-ce qui m'attend aujourd'hui ?", 'Lis-moi ma dernière newsletter', 'Quelles sont mes routines Claude ?', 'Quels skills j\'ai ?', 'Programme un brief chaque matin à 8 h 30'];
   return `<div class="chat">
     <div class="chat-head">
       <div><h1>Assistant</h1><p>Il connaît l'état de tes projets et ton compte Claude : skills, routines, connecteurs (Gmail, agenda…).</p></div>
       <div class="btn-row">
         <button class="btn back icon" data-action="nav" aria-label="Menu">${icon('menu')}</button>
-        ${renderBrain()}
         <button class="btn ghost sm" data-action="settings" data-section="routines">${icon('clock')}Routines${a.routines?.length ? ` (${a.routines.length})` : ''}</button>
         ${msgs.length ? `<button class="btn ghost sm" data-action="assistant-reset">Nouvelle conversation</button>` : ''}
       </div>
@@ -754,7 +751,6 @@ function renderAssistant() {
         <div class="msg ${m.role}">
           ${m.routine && m.role === 'user' ? `<span class="tag">Routine « ${esc(m.routine)} » · ${clock(m.at)}</span>` : ''}
           ${m.voice && m.role === 'user' ? `<span class="tag">${icon('mic')}Dicté au micro</span>` : ''}
-          ${m.provider && m.role === 'assistant' ? `<span class="tag">${esc(S.connections?.[m.provider]?.name || m.provider)}</span>` : ''}
           ${m.role === 'user' ? `<div>${esc(m.text).replace(/\n/g, '<br>')}</div>` : `${m.tools?.length ? `<div class="tools">${m.tools.map((t) => `<span>${esc(t.label)}</span>`).join('')}</div>` : ''}${md(m.text)}`}
         </div>`).join('')}
       ${a.busy ? `<div class="msg assistant">${a.live?.tools?.length ? `<div class="tools">${a.live.tools.map((t) => `<span>${esc(t.label)}</span>`).join('')}</div>` : ''}${a.live?.text ? md(a.live.text) : ''}<div class="typing"><i></i><i></i><i></i></div></div>` : ''}
@@ -780,15 +776,15 @@ async function loadAccount() {
 }
 function renderClaudePage() {
   const a = S.account;
-  if (!a) { loadAccount(); return '<div class="page"><h1>Connexions</h1><p class="lead">Chargement…</p></div>'; }
+  if (!a) { loadAccount(); return '<div class="page"><h1>Compte Claude</h1><p class="lead">Chargement…</p></div>'; }
   const rt = a.routines || { routines: [] };
   const when = (iso) => (iso ? new Date(iso).toLocaleString('fr-FR', { dateStyle: 'medium', timeStyle: 'short' }) : '');
   const copied = new Set((S.config?.routines || []).map((r) => r.claudeId).filter(Boolean));
   const row = (title, sub, actions) => `<div class="routine item"><div style="min-width:0"><div>${title}</div>${sub ? `<div class="what">${sub}</div>` : ''}</div><div class="btn-row">${actions}</div></div>`;
   return `<div class="page">
-    <div class="btn-row" style="justify-content:space-between"><h1>Connexions</h1><button class="btn back icon" data-action="nav" aria-label="Menu">${icon('menu')}</button></div>
-    <p class="lead">Branche tes IA en collant ta clé, une seule fois. Elle reste sur ton Mac, rangée dans un fichier que toi seul peux lire.</p>
-    ${renderProviders()}
+    <div class="btn-row" style="justify-content:space-between"><h1>Compte Claude</h1><button class="btn back icon" data-action="nav" aria-label="Menu">${icon('menu')}</button></div>
+    <p class="lead">Chlamyd.I.A. passe par Claude Code, connecté à ton compte Claude : les agents et l'assistant utilisent ton abonnement, sans clé à coller.</p>
+    ${renderLogin(a)}
 
     <h3 style="margin:28px 0 8px">Routines claude.ai</h3>
     <div class="panel">
@@ -829,116 +825,22 @@ function renderClaudePage() {
     </div>
   </div>`;
 }
-// Monogrammes maison : pas de logos de marques (leurs règles l'interdisent sans accord).
-const GLYPH = { anthropic: 'C', openai: 'G', google: '✦', ollama: 'L' };
-const HOWTO = {
-  anthropic: ['Ouvre la console Anthropic et connecte-toi (ou crée un compte).', 'Va dans <b>API Keys</b> › <b>Create Key</b>, donne-lui un nom (ex. Chlamyd.I.A.) et copie la clé.', 'Ajoute un peu de crédit dans <b>Billing</b> : l\'API est facturée à l\'usage, à part de l\'abonnement Claude.'],
-  openai: ['Ouvre la plateforme OpenAI et connecte-toi avec ton compte ChatGPT.', 'Clique sur <b>Create new secret key</b> et copie la clé.', 'L\'API est facturée à l\'usage, à part de l\'abonnement ChatGPT Plus : ajoute un peu de crédit dans <b>Billing</b>.'],
-  google: ['Ouvre Google AI Studio et connecte-toi avec ton compte Google.', 'Clique sur <b>Create API key</b> et copie la clé.', 'Gemini a une offre gratuite pour commencer, sans carte bancaire.'],
-};
-function renderProviders() {
-  const cs = S.connections || {};
-  return `<div class="providers">${['anthropic', 'openai', 'google', 'ollama'].map((id) => {
-    const c = cs[id] || { id, name: id };
-    const local = id === 'anthropic' && !c.connected && S.claude;
-    return `<div class="provider${c.connected || local ? ' on' : ''}" data-provider="${id}">
-      <div class="glyph" aria-hidden="true">${GLYPH[id]}</div>
+// Connexion de Claude Code à ton compte : faite une fois dans le Terminal, Chlamyd.I.A. la réutilise.
+function renderLogin(a) {
+  const l = a.login;
+  const warn = a.apiKeyInEnv ? `<p class="muted" style="margin:10px 0 0">⚠️ Une clé <code>ANTHROPIC_API_KEY</code> est définie dans ton terminal : elle passe avant ton abonnement et se facture à part. Pour utiliser ton abonnement, retire-la de ton fichier <code>~/.zshrc</code>, puis redémarre Chlamyd.I.A. (<code>maestro stop</code> puis <code>maestro</code>).</p>` : '';
+  return `<div class="provider${l ? ' on' : ''}">
+      <div class="glyph" aria-hidden="true">C</div>
       <div class="pv-body">
-        <div class="pv-name">${esc(c.name)}<small>${esc(c.company || '')}</small></div>
-        <div class="pv-state">${c.connected && c.local ? '<span class="dot on"></span>Prêt · gratuit, hors ligne' : c.connected ? `<span class="dot on"></span>Connecté · clé ${esc(c.hint)}` : local ? '<span class="dot on"></span>Via Claude Code sur ce Mac' : `<span class="dot"></span>${c.local ? 'Gratuit, sans compte' : 'Non connecté'}`}</div>
-        ${c.connected && c.models?.length > 1 ? `<select data-model="${id}" aria-label="Modèle ${esc(c.name)}">${c.models.map((m) => `<option ${m === c.model ? 'selected' : ''}>${esc(m)}</option>`).join('')}</select>` : c.model ? `<div class="pv-state">${esc(c.model)}</div>` : ''}
+        <div class="pv-name">Claude<small>par Claude Code</small></div>
+        <div class="pv-state">${l ? `<span class="dot on"></span>Connecté${l.email ? ` : ${esc(l.email)}` : ''}${l.organization ? ` · ${esc(l.organization)}` : ''}` : '<span class="dot"></span>Pas encore connecté'}</div>
       </div>
-      <div class="btn-row">${c.connected ? `<button class="btn ghost sm" data-action="disconnect" data-id="${id}">Déconnecter</button>` : `<button class="btn sm${local ? ' ghost' : ' primary'}" data-action="${c.local ? 'connect-local' : 'connect'}" data-id="${id}">${local ? 'Utiliser une clé' : c.local ? 'Installer' : 'Connecter'}</button>`}${c.connected && c.local ? `<button class="btn ghost sm" data-action="connect-local">Ajouter un modèle</button>` : ''}</div>
-    </div>`;
-  }).join('')}</div>
-  <p class="muted" style="margin:10px 0 0;font-size:13px">Claude fait travailler les agents et l'assistant. ChatGPT, Gemini ou le modèle local peuvent remplacer Claude pour discuter avec l'assistant (en haut de la page Assistant). Le modèle local tourne sur ton Mac : gratuit, sans compte, et rien ne sort de ton ordinateur.</p>`;
-}
-function openConnect(id) {
-  const c = S.connections?.[id];
-  if (!c) return;
-  const dlg = $('#settings');
-  dlg.innerHTML = `<form method="dialog" data-form="connect" data-id="${id}" class="connect">
-    <div class="dlg-head"><h2>Connecter ${esc(c.name)}</h2><button class="btn ghost icon sm" value="cancel" aria-label="Fermer">${icon('x')}</button></div>
-    <div class="dlg-body">
-      <ol class="steps">
-        ${HOWTO[id].map((t, i) => `<li><span class="n">${i + 1}</span><div><span>${t}</span>${i === 0 ? `<div><a class="btn sm" href="${esc(c.keyUrl)}" target="_blank" rel="noopener">${icon('web')}Ouvrir la page ${esc(c.company)}</a></div>` : ''}</div></li>`).join('')}
-        <li><span class="n">${HOWTO[id].length + 1}</span><div><span>Colle ta clé ici :</span>
-          <input type="password" name="key" autocomplete="off" spellcheck="false" placeholder="${id === 'anthropic' ? 'sk-ant-…' : id === 'openai' ? 'sk-…' : 'AIza…'}" required>
-          <div class="help" data-detect></div></div></li>
-      </ol>
     </div>
-    <div class="dlg-foot"><button class="btn ghost" value="cancel">Annuler</button><button class="btn primary" value="default" data-action="connect-save">Connecter</button></div>
-  </form>`;
-  dlg.showModal();
-  dlg.querySelector('input[name="key"]').focus();
-}
-// Modèle local : installer Ollama, télécharger un modèle (progression en direct), vérifier.
-let localPull = null;
-async function openLocal() {
-  const models = await api('GET', '/api/local-models').catch(() => []);
-  const have = new Set(S.connections?.ollama?.models || []);
-  const dlg = $('#settings');
-  dlg.innerHTML = `<form method="dialog" data-form="connect-local" class="connect">
-    <div class="dlg-head"><h2>Modèle local, gratuit</h2><button class="btn ghost icon sm" value="cancel" aria-label="Fermer">${icon('x')}</button></div>
-    <div class="dlg-body">
-      <p class="muted" style="margin:4px 0 0">Il tourne sur ton Mac grâce à Ollama : aucun crédit, aucun compte, et ça marche même hors ligne. Il est moins fort que Claude, et plus lent sur un petit Mac.</p>
-      <ol class="steps">
-        <li><span class="n">1</span><div><span>Installe <b>Ollama</b> : télécharge-le, ouvre le fichier et glisse l'app dans Applications. Ouvre-la une fois.</span><div><a class="btn sm" href="https://ollama.com/download" target="_blank" rel="noopener">${icon('web')}Télécharger Ollama</a></div></div></li>
-        <li><span class="n">2</span><div><span>Choisis un modèle. Il se télécharge une seule fois.</span>
-          <div class="local-models">${models.map((m) => `<button type="button" class="local-model${have.has(m.id) ? ' have' : ''}" data-action="local-pull" data-model="${esc(m.id)}" ${localPull ? 'disabled' : ''}><b>${esc(m.label)}</b><span>${esc(m.size)} · ${esc(m.note)}</span>${have.has(m.id) ? '<i>Installé</i>' : ''}</button>`).join('')}</div>
-          <div class="pull" data-pull ${localPull ? '' : 'hidden'}><div class="bar"><span class="active" style="width:${localPull?.percent || 0}%"></span></div><div class="help" data-pull-label>${esc(localPull ? `${localPull.model} : ${localPull.status || ''} ${localPull.percent ?? ''}%` : '')}</div></div>
-        </div></li>
-        <li><span class="n">3</span><div><span>C'est prêt : il apparaît dans les Connexions et en haut de l'assistant.</span></div></li>
-      </ol>
-    </div>
-    <div class="dlg-foot"><button class="btn ghost" value="cancel">Fermer</button><button class="btn primary" value="default" data-action="local-check">Vérifier</button></div>
-  </form>`;
-  if (!dlg.open) dlg.showModal();
-}
-function showPull(p) {
-  localPull = p.done ? null : p;
-  const box = $('#settings [data-pull]');
-  if (box) {
-    box.hidden = false;
-    box.querySelector('.active').style.width = `${p.percent ?? 0}%`;
-    box.querySelector('[data-pull-label]').textContent = p.error ? `⚠️ ${p.error}` : `${p.model} : ${p.status || ''}${p.percent != null ? ` ${p.percent} %` : ''}`;
-    $('#settings').querySelectorAll('[data-action="local-pull"]').forEach((b) => { b.disabled = !p.done; });
-  }
-  if (p.done && p.error) toast({ title: 'Téléchargement impossible', body: p.error, kind: 'error' });
-  if (p.done && !p.error) {
-    toast({ title: 'Modèle local prêt', body: `${p.model} est installé.`, kind: 'success' });
-    if ($('#settings').open && $('#settings [data-form="connect-local"]')) openLocal();
-  }
-}
-const KEY_SHAPES = { anthropic: /^sk-ant-/, openai: /^sk-(?!ant-)/, google: /^AIza/ };
-document.addEventListener('input', (e) => {
-  if (!e.target.matches?.('form[data-form="connect"] input[name="key"]')) return;
-  const v = e.target.value.trim();
-  const found = Object.keys(KEY_SHAPES).find((k) => KEY_SHAPES[k].test(v));
-  const want = e.target.form.dataset.id;
-  const out = e.target.form.querySelector('[data-detect]');
-  out.textContent = !v ? '' : found === want ? `Clé ${S.connections[want].name} reconnue.` : found ? `On dirait une clé ${S.connections[found].name} : elle sera rangée au bon endroit.` : 'Forme de clé inconnue, vérifie le copier-coller.';
-});
-async function saveConnect(form) {
-  const key = new FormData(form).get('key');
-  const btn = form.querySelector('[data-action="connect-save"]');
-  btn.disabled = true;
-  btn.textContent = 'Vérification…';
-  const r = await act('POST', '/api/connections', { key });
-  btn.disabled = false;
-  btn.textContent = 'Connecter';
-  if (r) {
-    form.closest('dialog').close();
-    toast({ title: `${r.name} est connecté`, body: r.model ? `Modèle : ${r.model}` : '', kind: 'success' });
-  }
-}
-// Cerveau de l'assistant : Claude (avec ses outils) ou une autre IA connectée, pour discuter.
-function renderBrain() {
-  const others = ['openai', 'google', 'ollama'].filter((id) => S.connections?.[id]?.connected);
-  if (!others.length) return '';
-  const cur = S.config?.assistant?.provider || 'claude';
-  const opts = [['claude', 'Claude'], ...others.map((id) => [id, S.connections[id].name])];
-  return `<div class="seg" role="group" aria-label="Cerveau de l'assistant">${opts.map(([id, name]) => `<button class="${cur === id || (id === 'claude' && !others.includes(cur)) ? 'on' : ''}" data-action="brain" data-id="${id}" aria-pressed="${cur === id}">${esc(name)}</button>`).join('')}</div>`;
+    ${l ? '' : `<ol class="steps" style="margin-top:12px">
+      <li><span class="n">1</span><div><span>Ouvre l'app <b>Terminal</b> et tape <code>claude</code>, puis Entrée.</span></div></li>
+      <li><span class="n">2</span><div><span>Tape <code>/login</code> et choisis <b>ton compte Claude</b> (abonnement Pro ou Max), pas la console API.</span></div></li>
+      <li><span class="n">3</span><div><span>Ton navigateur s'ouvre : valide, puis reviens ici et recharge la page.</span></div></li>
+    </ol>`}${warn}`;
 }
 function toAssistant(text, send = false) {
   if (send) { go('/assistant'); sendAssistant(text); return; }
@@ -947,8 +849,6 @@ function toAssistant(text, send = false) {
   requestAnimationFrame(() => { const ta = $('.chat-input textarea'); if (ta) { ta.value = text; ta.focus(); ta.setSelectionRange(text.length, text.length); autosize(ta); } });
 }
 document.addEventListener('change', async (e) => {
-  const sel = e.target.closest?.('select[data-model]');
-  if (sel) { act('PUT', `/api/connections/${sel.dataset.model}`, { model: sel.value }, 'Modèle changé'); return; }
   const input = e.target.closest?.('input[data-import="claude"]');
   if (!input?.files?.[0]) return;
   const file = input.files[0];
@@ -1237,7 +1137,6 @@ function openSettings(section) {
           <textarea id="f-mcp" name="mcp" rows="5" style="font-family:var(--mono);font-size:12.5px" placeholder='{ "notion": { "type": "http", "url": "https://mcp.notion.com/mcp" } }'>${esc(JSON.stringify(c.assistant?.mcpServers || {}, null, 2))}</textarea>
           <div class="help">Les serveurs que tu as déjà ajoutés à Claude Code avec <code>claude mcp add --scope user</code> sont aussi disponibles.</div></div>
         <div class="field"><label for="f-reads">Lire sans me demander</label><input id="f-reads" class="switch" type="checkbox" name="autoAllowReads" ${c.assistant?.autoAllowReads !== false ? 'checked' : ''}><div class="help">L'assistant lit tes mails, routines et notes sans te demander à chaque fois. Envoyer, créer, modifier ou supprimer passe toujours par ta boîte « À traiter ».</div></div>
-        <div class="field"><label for="f-lfolder">Dossier du modèle local</label><input id="f-lfolder" type="text" name="localFolder" value="${esc(c.assistant?.localFolder || '')}" placeholder="~/Documents/Chlamyd.I.A." style="width:260px"><div class="help">Le modèle local crée, lit et écrit librement ses fichiers ici. Ailleurs, il te demande d'abord.</div></div>
         <div class="field stack" id="claude-account"><label>Ton compte Claude</label><div class="help" data-claude-account>Chargement…</div></div>
         <div class="field"><label for="f-amodel">Modèle de l'assistant</label><input id="f-amodel" type="text" name="amodel" value="${esc(c.assistant?.model || '')}" placeholder="par défaut" style="width:180px"><div class="help"></div></div>
 
@@ -1299,7 +1198,7 @@ async function saveSettings(form) {
     allow: String(f.get('allow') || '').split('\n').map((s) => s.trim()).filter(Boolean),
     model: String(f.get('model') || '').trim(),
     notifications: { native: f.get('native'), sound: !!f.get('sound') },
-    assistant: { model: String(f.get('amodel') || '').trim(), mcpServers: mcp, autoAllowReads: !!f.get('autoAllowReads'), localFolder: String(f.get('localFolder') || '').trim() },
+    assistant: { model: String(f.get('amodel') || '').trim(), mcpServers: mcp, autoAllowReads: !!f.get('autoAllowReads') },
     openAs: f.get('openAs'),
   }, 'Réglages enregistrés');
   if (r) S.config = r;
@@ -1368,7 +1267,8 @@ function connect() {
     S.assistant = d.assistant;
     S.config = d.config;
     S.claude = d.claude;
-    S.connections = d.connections;
+    S.login = d.login;
+    S.apiKeyInEnv = d.apiKeyInEnv;
     S.fake = d.fake;
     if (R.sid) loadLog(R.pid, R.sid);
     render();
@@ -1406,8 +1306,6 @@ function connect() {
   });
   es.addEventListener('assistant-status', (e) => { Object.assign(S.assistant, JSON.parse(e.data)); render(); });
   es.addEventListener('assistant-reset', (e) => { S.assistant = JSON.parse(e.data); render(); });
-  es.addEventListener('local-pull', (e) => showPull(JSON.parse(e.data)));
-  es.addEventListener('connections', (e) => { S.connections = JSON.parse(e.data); render(); });
   es.addEventListener('claude-sync', (e) => { S.account = { ...(S.account || {}), ...JSON.parse(e.data) }; render(); });
   es.addEventListener('config', (e) => { S.config = JSON.parse(e.data); S.assistant.routines = S.config.routines; render(); });
   es.addEventListener('notify', (e) => onNotify(JSON.parse(e.data)));
@@ -1475,22 +1373,6 @@ document.addEventListener('click', async (e) => {
       break;
     }
     case 'suggest': sendAssistant(t.dataset.text); break;
-    case 'connect': openConnect(t.dataset.id); break;
-    case 'connect-local': openLocal(); break;
-    case 'local-pull': localPull = { model: t.dataset.model, status: 'démarrage', percent: 0 }; showPull(localPull); act('POST', '/api/connections/ollama/pull', { model: t.dataset.model }); break;
-    case 'local-check': {
-      e.preventDefault();
-      const r = await act('POST', '/api/connections/ollama/check');
-      if (r) { $('#settings').close(); toast({ title: 'Modèle local connecté', body: r.model || '', kind: 'success' }); }
-      break;
-    }
-    case 'connect-save': e.preventDefault(); saveConnect(t.closest('form')); break;
-    case 'disconnect': {
-      const c = S.connections?.[t.dataset.id];
-      if (c && confirm(`Déconnecter ${c.name} ? Sa clé sera effacée de ce Mac.`)) act('DELETE', `/api/connections/${t.dataset.id}`, null, `${c.name} déconnecté`);
-      break;
-    }
-    case 'brain': act('PUT', '/api/config', { assistant: { provider: t.dataset.id } }); break;
     case 'claude-fetch': if (S.account) S.account.fetching = true; render(); act('POST', '/api/claude/routines/fetch'); break;
     case 'claude-copy': if (await act('POST', `/api/claude/routines/${encodeURIComponent(t.dataset.id)}/copy`, null, 'Routine copiée dans Chlamyd.I.A.')) render(); break;
     case 'claude-routine-read': toAssistant(`Lis-moi le dernier résultat de ma routine claude.ai « ${t.dataset.name} » (${t.dataset.id}).`, true); break;
@@ -1544,8 +1426,6 @@ document.addEventListener('submit', async (e) => {
   if (!form) return;
   e.preventDefault();
   const kind = form.dataset.form;
-  if (kind === 'connect') return saveConnect(form);
-  if (kind === 'connect-local') return;
   const ta = form.querySelector('textarea');
   const text = ta?.value.trim();
   const clear = () => { if (ta) { delete drafts[ta.dataset.key]; ta.value = ''; autosize(ta); } };

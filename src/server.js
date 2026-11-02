@@ -5,8 +5,7 @@ import crypto from 'node:crypto';
 import { manager } from './manager.js';
 import { inbox } from './inbox.js';
 import { assistant } from './assistant.js';
-import { claudeDir, listSkills, listScheduledTasks } from './claude-account.js';
-import { PROVIDERS, LOCAL_MODELS, connect, connectLocal, pullLocalModel, disconnect, setModel, publicInfo } from './providers.js';
+import { claudeDir, claudeLogin, listSkills, listScheduledTasks } from './claude-account.js';
 import { importClaudeExport, fetchClaudeRoutines, copyRoutineLocally, accountSnapshot } from './claude-sync.js';
 import { bus, broadcast, setPresence, notify } from './bus.js';
 import { getConfig, updateConfig, findClaude } from './config.js';
@@ -77,7 +76,9 @@ function snapshot() {
     assistant: assistant.snapshot(),
     config: getConfig(),
     claude: findClaude(),
-    connections: publicInfo(),
+    // Une clé API dans le terminal passe avant l'abonnement Claude : on le signale dans la page Compte Claude.
+    apiKeyInEnv: !!process.env.ANTHROPIC_API_KEY,
+    login: claudeLogin(),
     platform: process.platform,
     fake: process.env.MAESTRO_FAKE === '1',
   };
@@ -182,46 +183,7 @@ route('POST', '/api/assistant', ({ body }) => {
 route('POST', '/api/assistant/stop', () => (assistant.stop(), { ok: true }));
 route('POST', '/api/assistant/reset', () => (assistant.reset(), { ok: true }));
 route('GET', '/api/claude-account', () => ({ dir: claudeDir(), skills: listSkills(), scheduled: listScheduledTasks() }));
-// Connexions : la clé arrive une fois du navigateur (127.0.0.1 + jeton) et n'en ressort jamais.
-route('GET', '/api/connections', () => publicInfo());
-route('POST', '/api/connections', async ({ body }) => {
-  const info = await connect(body.key, body.provider || null);
-  broadcast('connections', publicInfo());
-  return info;
-});
-// Modèle local (Ollama) : vérifier qu'il tourne, ou télécharger un modèle avec la progression en direct.
-route('GET', '/api/local-models', () => LOCAL_MODELS);
-route('POST', '/api/connections/ollama/check', async () => {
-  const info = await connectLocal();
-  broadcast('connections', publicInfo());
-  return info;
-});
-route('POST', '/api/connections/ollama/pull', ({ body }) => {
-  const model = String(body.model || '');
-  fire(
-    pullLocalModel(model, (p) => broadcast('local-pull', { model, ...p }))
-      .then(() => {
-        broadcast('local-pull', { model, status: 'terminé', percent: 100, done: true });
-        broadcast('connections', publicInfo());
-      })
-      .catch((e) => broadcast('local-pull', { model, error: e.message, done: true })),
-  );
-  return { ok: true };
-});
-route('PUT', '/api/connections/:id', ({ params, body }) => {
-  if (!PROVIDERS[params.id]) throw Object.assign(new Error('Service inconnu'), { status: 404 });
-  setModel(params.id, String(body.model || ''));
-  broadcast('connections', publicInfo());
-  return publicInfo()[params.id];
-});
-route('DELETE', '/api/connections/:id', ({ params }) => {
-  if (!PROVIDERS[params.id]) throw Object.assign(new Error('Service inconnu'), { status: 404 });
-  disconnect(params.id);
-  if (getConfig().assistant?.provider === params.id) broadcast('config', updateConfig({ assistant: { provider: 'claude' } }));
-  broadcast('connections', publicInfo());
-  return { ok: true };
-});
-route('GET', '/api/claude', () => ({ dir: claudeDir(), skills: listSkills(), scheduled: listScheduledTasks(), ...accountSnapshot() }));
+route('GET', '/api/claude', () => ({ login: claudeLogin(), apiKeyInEnv: !!process.env.ANTHROPIC_API_KEY, dir: claudeDir(), skills: listSkills(), scheduled: listScheduledTasks(), ...accountSnapshot() }));
 route('POST', '/api/claude/routines/fetch', () => (fire(fetchClaudeRoutines()), { ok: true }));
 route('POST', '/api/claude/routines/:id/copy', ({ params }) => copyRoutineLocally(decodeURIComponent(params.id)));
 // Export claude.ai envoyé tel quel par le navigateur (zip ou projects.json) : écrit dans un fichier temporaire puis importé.

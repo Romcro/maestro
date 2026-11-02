@@ -876,7 +876,6 @@ dialog[open] { animation: rise 0.35s cubic-bezier(.2, .8, .2, 1); }
 .empty .term { border-radius: 16px; }
 
 /* ------------------------------------------------------------------ connexions */
-.providers { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 14px; }
 .provider { padding: 18px; display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; gap: 14px; align-items: start; overflow: hidden; }
 .provider > .btn-row { grid-column: 1 / -1; }
 .provider .glyph {
@@ -886,9 +885,7 @@ dialog[open] { animation: rise 0.35s cubic-bezier(.2, .8, .2, 1); }
   animation: morph 10s ease-in-out infinite;
   box-shadow: 0 10px 24px -10px currentColor;
 }
-.provider[data-provider='anthropic'] .glyph { background: linear-gradient(135deg, #ff9a6b, #d9572f); color: #fff; }
-.provider[data-provider='openai'] .glyph { background: linear-gradient(135deg, #4dffc3, #0f8f6e); }
-.provider[data-provider='google'] .glyph { background: linear-gradient(135deg, #8aa6ff, #a77bff 60%, #ff5fd2); }
+.provider .glyph { background: linear-gradient(135deg, #ff9a6b, #d9572f); color: #fff; }
 .provider:not(.on) .glyph { filter: saturate(0.35) brightness(0.85); }
 .pv-name { font-family: var(--display); font-weight: 600; font-size: 17px; letter-spacing: -0.02em; }
 .pv-name small { display: block; font-family: var(--font); font-weight: 500; font-size: 12px; color: var(--ink-3); letter-spacing: 0.04em; }
@@ -899,10 +896,6 @@ dialog[open] { animation: rise 0.35s cubic-bezier(.2, .8, .2, 1); }
 .steps li { display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start; }
 .steps li > div { display: grid; gap: 8px; }
 .steps .n { width: 30px; height: 30px; border-radius: 50%; display: grid; place-items: center; font-family: var(--display); font-size: 13px; font-weight: 600; color: #fff; background: var(--iri); box-shadow: 0 6px 18px -6px var(--accent-2); }
-.steps input { width: 100%; font-family: var(--mono); font-size: 13px; height: 40px; padding: 0 12px; }
-.seg { display: inline-flex; padding: 3px; border-radius: 99px; border: 1px solid var(--line-2); background: var(--surface); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
-.seg button { border: 0; background: none; height: 28px; padding: 0 12px; border-radius: 99px; color: var(--ink-2); font-weight: 600; font-size: 13px; cursor: pointer; }
-.seg button.on { background: var(--iri); color: #fff; box-shadow: 0 4px 14px -6px var(--accent-2); }
 
 @keyframes morph {
   0%, 100% { border-radius: 42% 58% 61% 39% / 47% 39% 61% 53%; }
@@ -1014,17 +1007,3 @@ dialog[open] { animation: rise 0.35s cubic-bezier(.2, .8, .2, 1); }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001s !important; animation-iteration-count: 1 !important; transition: none !important; }
 }
-
-/* ------------------------------------------------------------------ modèle local */
-.provider[data-provider='ollama'] .glyph { background: linear-gradient(135deg, #ffd27a, #ff8a5c 55%, #a77bff); }
-.local-models { display: grid; gap: 8px; }
-.local-model { display: grid; grid-template-columns: 1fr auto; gap: 2px 10px; text-align: left; padding: 10px 14px; border-radius: 14px; border: 1px solid var(--line-2); background: var(--surface); color: var(--ink); cursor: pointer; transition: border-color 0.2s, transform 0.15s; }
-.local-model:hover:not(:disabled) { border-color: color-mix(in srgb, var(--accent-2) 60%, transparent); transform: translateY(-1px); }
-.local-model:disabled { opacity: 0.55; cursor: progress; }
-.local-model span { grid-column: 1; color: var(--ink-3); font-size: 13px; }
-.local-model i { grid-row: 1 / 3; grid-column: 2; align-self: center; font-style: normal; font-size: 12px; font-weight: 600; color: var(--sage); }
-.local-model.have { border-color: color-mix(in srgb, var(--sage) 40%, transparent); }
-.pull { display: grid; gap: 6px; }
-.pull .bar { height: 6px; background: var(--line); overflow: hidden; }
-.pull .bar .active { display: block; height: 100%; transition: width 0.3s ease; }
-.pull[hidden] { display: none; }

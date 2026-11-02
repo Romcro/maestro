@@ -10,6 +10,23 @@ export function claudeDir() {
   return process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 }
 
+/**
+ * Compte Claude utilisé par Claude Code sur ce Mac (connexion faite avec `claude` puis /login).
+ * Lu dans ~/.claude.json : seulement l'adresse et l'organisation, jamais de jeton.
+ */
+export function claudeLogin() {
+  const files = process.env.CLAUDE_CONFIG_DIR
+    ? [path.join(process.env.CLAUDE_CONFIG_DIR, '.claude.json')]
+    : [path.join(os.homedir(), '.claude.json'), path.join(claudeDir(), '.claude.json')];
+  for (const f of files) {
+    try {
+      const acc = JSON.parse(fs.readFileSync(f, 'utf8')).oauthAccount;
+      if (acc) return { email: acc.emailAddress || null, organization: acc.organizationName || null };
+    } catch {}
+  }
+  return null;
+}
+
 /** En-tête YAML simple d'un SKILL.md : name, description (sur une ou plusieurs lignes). */
 export function parseFrontmatter(text) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
