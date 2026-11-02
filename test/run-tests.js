@@ -349,6 +349,7 @@ await test('crédit épuisé : explique comment revenir à ton abonnement', asyn
   assert.match(friendlyError('Credit balance is too low'), /ANTHROPIC_API_KEY définie dans ton terminal/);
   delete process.env.ANTHROPIC_API_KEY;
   assert.equal(friendlyError('autre souci'), 'autre souci');
+  assert.match(friendlyError('Claude Code returned an error result: OAuth token has expired'), /\/login.*Détail : OAuth token has expired\)/);
 });
 
 await test('Compte Claude : reconnaît la connexion de Claude Code sans lire de jeton', async () => {
